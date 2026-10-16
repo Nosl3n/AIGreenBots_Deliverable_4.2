@@ -6,10 +6,10 @@ id = 13   # MUST be unique across the shared graph: room=5 robot=6 table=7 retin
 name = "human_concept"
 configFile = ""
 domain = 0
-tree = true
-graph = true
-"2d" = true
-"3d" = true
+tree = false
+graph = false   # one graph viewer is enough: robot_concept hosts it
+"2d" = false
+"3d" = false
 
 [Period]
 Compute = 50      # 20 Hz — also drives the kinematic speed/accel-limit dt (HumanModel.dt)
@@ -47,6 +47,8 @@ MinValid = 12                    # fewer valid joints ⇒ raise the look afforda
 UncertaintyThresh = 0.05         # tr(cov) above this ⇒ raise the look affordance
 PoseCovScale = 0.02              # room→person RT covariance proxy = scale·tr(cov)
 DeathTimeoutS = 2.0              # seconds with NO evidence at all (no skeleton AND no LiDAR beam reaching the person)
+BirthMinFits = 3                 # camera fits a NEW track needs before it becomes a person node (tentative until then):
+                                 # a skeleton placed in a crop row by an occluding leaf jumps from leaf to leaf and never gets them
 
 [HumanLidar]                     # the LiDAR as a "second look" (src/human_lidar_presence.h)
 Enabled = true
@@ -95,7 +97,7 @@ VLinMax = 3.0                    # max lower-body linear speed (m/s)
 ALinMax = 30.0                   # max lower-body linear acceleration (m/s^2)
 # Per-cycle fit-diagnostics CSV (the gate). Empty = off. Columns: cycle,node,dt,fe,valid,tr_cov,
 # mu0..mu10, sig_l_elbow/r_elbow/l_wrist/r_wrist (mm), vel_clamped, acc_clamped.
-FitCsvPath = "etc/human_fit_log.csv"
+FitCsvPath = ""   # diagnostic, off by default: "etc/human_fit_log.csv"
 
 [Epistemic]
 ObsDistance = 1.5                # stand-off (m) from the person at the look viewpoint

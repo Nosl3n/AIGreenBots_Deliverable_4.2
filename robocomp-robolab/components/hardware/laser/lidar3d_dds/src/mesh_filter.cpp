@@ -120,6 +120,34 @@ namespace
 {
 static constexpr float kAxisDirs[6][3] = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
 
+// The 26 directions of the 3x3x3 neighbourhood (faces, edges, corners), unit length. ★AXIS RAYS ALONE CANNOT
+// SEE A CONVEX EDGE: a point just beyond an edge of a box, diagonally, has every one of the 6 axis rays run
+// parallel to a face or off into space, so it was kept whatever `dilate` was. MEASURED 2026-10-15 on the Husky:
+// 2-3 returns/sweep at robot (-0.34, 0.13..0.31, 0.37), 2 mm from the top plate's left upper edge, survived
+// dilate 0.05 AND 0.08. The edge/corner diagonals reach them; the face rays keep doing what they did.
+struct Dirs26
+{
+    float d[26][3];
+    constexpr Dirs26() : d{}
+    {
+        int k = 0;
+        for (int x = -1; x <= 1; ++x)
+            for (int y = -1; y <= 1; ++y)
+                for (int z = -1; z <= 1; ++z)
+                {
+                    if (x == 0 and y == 0 and z == 0)
+                        continue;
+                    const int n2 = x * x + y * y + z * z;
+                    const float inv = n2 == 1 ? 1.0f : (n2 == 2 ? 0.70710678f : 0.57735027f);
+                    d[k][0] = static_cast<float>(x) * inv;
+                    d[k][1] = static_cast<float>(y) * inv;
+                    d[k][2] = static_cast<float>(z) * inv;
+                    ++k;
+                }
+    }
+};
+static constexpr Dirs26 kDirs26{};
+
 // Does a ray from `org` along `d` hit the mesh within `reach` metres?
 inline bool ray_hits(RTCScene scene, const float org[3], const float d[3], float reach)
 {
@@ -153,7 +181,13 @@ inline bool point_hits_mesh(RTCScene scene, const Eigen::Vector3f& p_mm, float d
                             const RTCBounds& bounds, float enclose_reach)
 {
     const float org[3] = { p_mm.x() * 0.001f, p_mm.y() * 0.001f, p_mm.z() * 0.001f };   // mm -> m
-    for (const auto& d : kAxisDirs)
+    // Farther than `dilate` from the robot's box: cannot be near its skin, nor inside it. One comparison for
+    // the ~all returns that are out in the world, which pays for the 26 rays below.
+    if (org[0] < bounds.lower_x - dilate or org[0] > bounds.upper_x + dilate or
+        org[1] < bounds.lower_y - dilate or org[1] > bounds.upper_y + dilate or
+        org[2] < bounds.lower_z - dilate or org[2] > bounds.upper_z + dilate)
+        return false;
+    for (const auto& d : kDirs26.d)
         if (ray_hits(scene, org, d, dilate))
             return true;
 

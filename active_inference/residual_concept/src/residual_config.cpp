@@ -116,6 +116,8 @@ ResidualConfig load_residual_config(const ConfigLoader& cfg)
     out.grid_clear_stop_max_m     = getf("Grid.ClearStopMaxM",      0.10f); // do not clear close to the hit
     out.grid_collision_band_top_m = getf("Grid.CollisionBandTopM",  0.50f); // free needs the collision band seen
     out.grid_lidar_clearance_m    = getf("Grid.LidarClearanceM",    0.55f); // nothing inside this radius is cleared
+    out.grid_free_along_beam      = getb("Grid.FreeAlongBeam",      false); // outdoor ray model (see OccGridParams)
+    out.grid_beam_memory_logodds  = getf("Grid.BeamMemoryLogOdds",  2.0f);  // ...and its memory
     out.helios_min_range_m        = getf("LidarModel.HeliosMinRangeM", 0.40f); // dead shells: no returns closer
     out.bpearl_min_range_m        = getf("LidarModel.BpearlMinRangeM", 0.10f);
     out.zed_min_range_m           = getf("LidarModel.ZedMinRangeM",    0.30f);

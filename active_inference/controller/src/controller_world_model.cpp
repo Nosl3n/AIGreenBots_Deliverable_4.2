@@ -243,6 +243,56 @@ std::optional<ControllerTargetInfo> ControllerWorldModel::read_target_in_room(st
     if (!graph_ || !inner_eigen_api_ || !graph_state_.ready() || !params_)
         return std::nullopt;
 
+    // ★AN EXPLICIT GOAL BEATS AN AFFORDANCE. A goal linked robot -goto_action-> node is an OPERATOR's command
+    // (a click, utils/send_goal.py, utils/run_route.py); an affordance is something the robot MAY do on its own
+    // (approach a person, look at an object). With the operator's goal read only when no affordance was on offer,
+    // any worker in view took the robot over and a commanded route was never driven. So: the explicit goal
+    // first; with none, the affordances exactly as before.
+    const auto explicit_goal = [&]() -> std::optional<ControllerTargetInfo>
+    {
+        const auto edges = graph_->get_edges_by_type(params_->target_edge_type);
+        if (edges.empty())
+            return std::nullopt;
+
+        const auto time_query = params_->interpolate_rt ? DSR::RT_API::TimeQuery::Interpolated
+                                                        : DSR::RT_API::TimeQuery::Nearest;
+        for (const auto &edge : edges)
+        {
+            std::uint64_t target_id = edge.to();
+            if (edge.to() == graph_state_.room_id || edge.to() == graph_state_.robot_id)
+                target_id = edge.from();
+            else if ((edge.from() == graph_state_.room_id || edge.from() == graph_state_.robot_id) && edge.to() != 0)
+                target_id = edge.to();
+
+            if (target_id == 0 || target_id == graph_state_.room_id || target_id == graph_state_.robot_id)
+                continue;
+
+            const auto target_name = graph_->get_name_from_id(target_id);
+            if (!target_name.has_value())
+                continue;
+
+            const auto translation = inner_eigen_api_->transform(graph_state_.room_name,
+                                                                 *target_name,
+                                                                 timestamp_ms,
+                                                                 "RT",
+                                                                 time_query);
+            if (!translation.has_value())
+                continue;
+
+            ControllerTargetInfo info;
+            info.node_id = target_id;
+            info.node_name = *target_name;
+            info.room_pos = Eigen::Vector2f(static_cast<float>(translation->x()), static_cast<float>(translation->y()));
+            info.from_affordance = false;
+            if (!finite_target_info(info))
+                continue;
+            return info;
+        }
+        return std::nullopt;
+    }();
+    if (explicit_goal.has_value())
+        return explicit_goal;
+
     if (affordance_manager_)
     {
         // Robot room-frame position feeds the grounded EFE nav-cost term in select_target.
@@ -267,45 +317,6 @@ std::optional<ControllerTargetInfo> ControllerWorldModel::read_target_in_room(st
                 return std::nullopt;
             return info;
         }
-    }
-
-    const auto edges = graph_->get_edges_by_type(params_->target_edge_type);
-    if (edges.empty())
-        return std::nullopt;
-
-    const auto time_query = params_->interpolate_rt ? DSR::RT_API::TimeQuery::Interpolated
-                                                    : DSR::RT_API::TimeQuery::Nearest;
-    for (const auto &edge : edges)
-    {
-        std::uint64_t target_id = edge.to();
-        if (edge.to() == graph_state_.room_id || edge.to() == graph_state_.robot_id)
-            target_id = edge.from();
-        else if ((edge.from() == graph_state_.room_id || edge.from() == graph_state_.robot_id) && edge.to() != 0)
-            target_id = edge.to();
-
-        if (target_id == 0 || target_id == graph_state_.room_id || target_id == graph_state_.robot_id)
-            continue;
-
-        const auto target_name = graph_->get_name_from_id(target_id);
-        if (!target_name.has_value())
-            continue;
-
-        const auto translation = inner_eigen_api_->transform(graph_state_.room_name,
-                                                             *target_name,
-                                                             timestamp_ms,
-                                                             "RT",
-                                                             time_query);
-        if (!translation.has_value())
-            continue;
-
-        ControllerTargetInfo info;
-        info.node_id = target_id;
-        info.node_name = *target_name;
-        info.room_pos = Eigen::Vector2f(static_cast<float>(translation->x()), static_cast<float>(translation->y()));
-        info.from_affordance = false;
-        if (!finite_target_info(info))
-            continue;
-        return info;
     }
 
     return std::nullopt;

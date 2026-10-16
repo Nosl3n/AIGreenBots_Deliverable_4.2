@@ -19,6 +19,7 @@
 #include "specificworker.h"
 #include "dds_publisher.h"
 #include "mesh_filter.h"
+#include "mixed_pixel_filter.h"
 #include <cstdlib>   // std::getenv (OMP_WAIT_POLICY report)
 #include <cppitertools/enumerate.hpp>
 #include <algorithm>
@@ -276,6 +277,23 @@ void SpecificWorker::initialize()
         }
         driver.start();
         std::cout << __FUNCTION__ << " Driver initiated OK" << std::endl;
+    }
+
+    // ---- Optional mixed-pixel filter (returns floating between two surfaces at a depth edge) ----
+    try { mixed_pixel_enabled_ = this->configLoader.get<bool>("MixedPixel.enabled"); } catch(...) {}
+    try { mixed_pixel_cfg_.rel_tol = static_cast<float>(this->configLoader.get<double>("MixedPixel.rel_tol")); } catch(...) {}
+    try { mixed_pixel_cfg_.abs_tol_mm = 1000.f * static_cast<float>(this->configLoader.get<double>("MixedPixel.abs_tol_m")); } catch(...) {}
+    if (mixed_pixel_enabled_)
+    {
+        std::string report;
+        const bool ok = mixed_pixel_filter_self_test(&report);
+        std::cout << report << " | rel_tol " << mixed_pixel_cfg_.rel_tol << ", abs_tol "
+                  << mixed_pixel_cfg_.abs_tol_mm << " mm" << std::endl;
+        if (not ok)
+        {
+            std::cerr << "MixedPixel self-test FAILED — filter disabled" << std::endl;
+            mixed_pixel_enabled_ = false;
+        }
     }
 
     // ---- Optional robot-body self-filter (Embree, static Shadow mesh) ----
@@ -576,6 +594,11 @@ void SpecificWorker::compute()
             }
         }
 
+        // Mixed pixels (see mixed_pixel_filter.h): on the FULL device-frame grid, before the self-filter
+        // punches the robot's silhouette out of it (its holes would read as "no neighbour").
+        if (mixed_pixel_enabled_)
+            mixed_pixel_removed_ += mixed_pixel_filter(raw_lidar, mixed_pixel_cfg_);
+
         // Self-filter: drop points hitting the robot body mesh (once, upstream of every
         // output — the image projection, the Ice buffer and the DDS plane all get it).
         if (mesh_filter_enabled && mesh_filter)
@@ -619,7 +642,8 @@ void SpecificWorker::compute()
     catch (const Ice::Exception &e)
         {std::cerr << __FUNCTION__ << " Error in Lidar Proxy\n" << e.what() << std::endl;}
 
-    fps.print("Num points: " + std::to_string(num_points)+ " Timestamp: " + std::to_string(raw_lidar.timestamp), 3000);
+    fps.print("Num points: " + std::to_string(num_points) + " Timestamp: " + std::to_string(raw_lidar.timestamp)
+              + (mixed_pixel_enabled_ ? " mixed-pixel removed (total): " + std::to_string(mixed_pixel_removed_) : ""), 3000);
 }
 
 

@@ -8,6 +8,7 @@
  */
 
 #include "../../common/world_frame/world_frame.h"   // rc::world:: — room indoors, field outdoors
+#include "../../common/vegetation/plant_discs.h"    // rc::veg:: — vegetation_concept's plants as discs
 #include "specificworker.h"
 
 #include <cstdlib>
@@ -276,6 +277,30 @@ std::vector<rc::SpecialistSdf> SpecificWorker::build_specialist_sdfs() const
                                      std::sqrt(std::max(0.0f, var_xy) + sensor_var),
                                      std::sqrt(std::max(0.0f, var_z)  + sensor_var)});
         }
+
+    // PLANTS (vegetation_concept): the canopy as a vertical cylinder, ground to top. Unlike furniture, a canopy
+    // returns from its whole VOLUME (leaves inside it, not one outer face), so the explainer is the distance to
+    // the SOLID — 0 anywhere inside — rather than the signed surface distance, which would leave the interior
+    // leaves unexplained. The read-out footprint is the equal-area square of the disc (half side r·√π/2).
+    for (const auto& pd : rc::veg::read_plant_discs(*G, *inner_eigen_, world_.name(*G)))
+    {
+        const Eigen::Vector2f c = pd.c;
+        const float r = pd.r, h = std::max(pd.h, 0.3f);
+        float var_xy = 0.0f;
+        if (const auto n = G->get_node(pd.name); n.has_value())
+            if (const auto e = G->get_edge(room_node_id_, n->id(), "RT"); e.has_value())
+                if (const auto cov = G->get_attrib_by_name<rt_covariance_att>(e.value()); cov.has_value() and cov->get().size() >= 8)
+                    var_xy = 0.5f * (cov->get()[0] + cov->get()[7]);
+        out.push_back([c, r, h](const Eigen::Vector3f& p)
+                      {
+                          const float dr = std::max(std::hypot(p.x() - c.x(), p.y() - c.y()) - r, 0.0f);
+                          const float dz = std::max(std::abs(p.z() - 0.5f * h) - 0.5f * h, 0.0f);
+                          return std::hypot(dr, dz);
+                      });
+        const float half = 0.886227f * r;   // √π/2: the square with the disc's area
+        soft_objects_.push_back({c.x(), c.y(), 0.0f, half, half, h,
+                                 std::sqrt(std::max(0.0f, var_xy) + sensor_var), std::sqrt(sensor_var)});
+    }
     return out;
 }
 
@@ -726,6 +751,8 @@ void SpecificWorker::compute()
             gp.clear_stop_max_m     = cfg_.grid_clear_stop_max_m;
             gp.collision_band_top_m = cfg_.grid_collision_band_top_m;
             gp.lidar_clearance_m    = cfg_.grid_lidar_clearance_m;
+            gp.free_along_beam      = cfg_.grid_free_along_beam;
+            gp.beam_memory_logodds  = cfg_.grid_beam_memory_logodds;
             gp.speckle_min_neighbours = cfg_.grid_speckle_min_neighbours;
             gp.speckle_grace_cycles   = cfg_.grid_speckle_grace_cycles;
             gp.speckle_min_component_cells = cfg_.grid_speckle_min_component_cells;

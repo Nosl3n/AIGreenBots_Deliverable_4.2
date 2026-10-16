@@ -46,7 +46,7 @@ while [[ $# -gt 0 ]]; do
         *)           args+=("$1"); shift ;;
     esac
 done
-[[ ${#args[@]} -eq 0 ]] && args=(etc/config.toml)
+[[ ${#args[@]} -eq 0 ]] && args=(etc/config_husky.toml)
 
 if [[ ! -x bin/residual_concept ]]; then
     echo "run_capped.sh: bin/residual_concept not found or not executable — build it first (cbuild)" >&2

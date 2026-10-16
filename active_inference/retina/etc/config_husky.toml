@@ -76,11 +76,15 @@ Verbose = false
 # (see README "TensorRT version lock"). Set false to run on the CUDA EP only — version-independent,
 # same masks, no TRT speedup — if the TRT libs can't be reconciled (e.g. after an apt upgrade).
 use_trt =true
-model_path = "models/yolo26/yolo26x-seg.onnx"    # L (was yolo26x-seg): lighter seg to lift compute toward the 24 Hz RGB feed
+model_path = "models/yolo26/yolo26x-seg.onnx"    # HUSKY: X (2026-10-15), with TensorRT FP16 in mind: 7.5 ms vs 31 ms on the CUDA EP
+                                                 # (RTX 5070 Ti). An A/B on 24 orchard frames (2026-10-14) found L as good for people
+                                                 # (mask IoU 0.87, one close-up X missed) — yolo26l-seg.onnx is kept beside it.
 conf_thresh = 0.25          # min class confidence to ACCEPT a seg detection/mask (argmax score floor); raise to reject weak masks
 iou_thresh  = 0.45          # NMS IoU: dedupe overlapping same-class boxes above this
 second_best_margin = 0.0    # if top class is NOT in accepted_labels but the runner-up IS and within this margin, adopt the runner-up (0 = off; try 0.10 to recover near-tie furniture)
-accepted_labels = ["person", "bicycle", "car", "motorcycle", "truck", "bird", "cat", "dog", "horse", "sheep", "cow", "bench", "potted plant"]   # HUSKY: what can be met in a field (a tractor usually reads as truck); COCO has no crop class
+accepted_labels = ["person"]   # HUSKY: only people. Trunks and foliage come from the ADE20K [Semantic] block (trunk_concept /
+                               # vegetation_concept); no other COCO class has a consumer here. The model still scores all 80
+                               # classes — this list only decides what is published, so it costs nothing either way.
 mask_tray = false   # HUSKY: the tray polygon masks Shadow's own tray in the image; the Husky ZED sees no robot part
 tray_mask_ref_width  = 1280
 tray_mask_ref_height = 720
@@ -115,7 +119,8 @@ zed_thread_period_ms = 4
 # (camera frame, metres) consumed by human_concept. Default OFF — set enabled=true once the ONNX
 # model exists. Export with: yolo export model=yolo26m-pose.pt format=onnx  (gives yolo26m-pose.onnx).
 enabled = true   # HUSKY: people: YOLO-pose -> skeleton node -> human_concept
-model_path = "models/yolo26/yolo26l-pose.onnx"
+model_path = "models/yolo26/yolo26x-pose.onnx"   # HUSKY: X (2026-10-15). 6.0 ms TensorRT FP16 / 23 ms CUDA EP. Exported with
+                                                # yolo export model=yolo26x-pose.pt format=onnx opset=17 simplify=True end2end=False
 conf_thresh = 0.30          # person-detection confidence floor
 kp_conf_min = 0.30          # per-joint floor; below this a keypoint is dropped (NaN)
 depth_patch = 2             # half-window (px) for the median-depth sample at each joint
@@ -124,48 +129,31 @@ hold_ms = 500               # keep last good skeleton this long after a detectio
 decimation = 1              # run pose every Nth cycle; 1 = every frame (no skeleton stutter). Raise if GPU-bound
 
 [Semantic]
-# YOLO26 semantic-segmentation model (ADE20K-150) on the same RGB frame → a DENSE per-pixel class
-# map (vs the sparse per-instance seg masks). Currently a viewer overlay only (no DSR publish).
-# Default OFF — set enabled=true once the ONNX model exists. Export with:
-#   yolo export model=yolo26l-sem-ade20k.pt format=onnx   (gives yolo26l-sem-ade20k.onnx).
-enabled = false   # HUSKY: terrain/vegetation semantics is part 2
-                  # publish. Flip true to bring the dense ADE20K branch + "Semantic" ZED toggle back.
-model_path = "models/yolo26/yolo26l-sem-ade20k-probs.onnx"  # graded build: exposes class_probs [1,5,80,80]
-                            # for wall,cabinet,door,shelf,hood (prob_class_ids in the model metadata). The plain
-                            # ...-ade20k.onnx has no class_probs output -> SemanticMap::graded()==false and every
-                            # published mask confidence collapses back to 1.000.
+# YOLO26 semantic-segmentation model (ADE20K-150) on the same RGB frame → a DENSE per-pixel class map.
+# HUSKY: this is the VEGETATION channel. The dense map itself is not published (publish_node = false);
+# only its vegetation classes leave retina, as instance masks on the 'masks' node (publish_masks below),
+# where vegetation_concept turns them into `plant` nodes. Model copied from the original stack
+# (~/robocomp/components/active_inference/retina/models/yolo26/), not versioned (*.onnx).
+enabled = true    # HUSKY: vegetation semantics (vegetation_concept)
+model_path = "models/yolo26/yolo26x-sem-ade20k.onnx"   # HUSKY: X (2026-10-15), official Ultralytics weights, exported like the
+                                                       # pose model. 5.3 ms TensorRT FP16 / 19 ms CUDA EP. Plain export: the
+                                                       # -probs build only grades furniture classes
 conf_thresh = 0.25          # per-pixel argmax-softmax floor; below it the pixel is "ignore" (255)
 input_size = 640
 use_trt = true             # dense model; CUDA EP avoids the TRT version lock
-decimation = 1              # run the model every Nth cycle; reuse the last map on skipped cycles (1 = every frame;
-                            # semantic masks are only appended on FRESH cycles, so keep this low when publish_masks)
-publish_node = true        # RE-ENABLED 2026-07-25: the crash was NOT this blob — it was the DSR dangling-atomic stray write
-                            # (cortex fullgraph_request_thread), fixed 2026-07-21 in libdsr_api.so (see cortex/FULLGRAPH_DANGLING_ATOMIC_BUG.md).
-                            # publish_node merely reshaped the stack so the 1-byte wild write hit a live object. Fix is in the installed
-                            # libdsr_api.so (07-24 20:29) + this binary is built against it. Original note kept below for history:
-                            # ROOT CAUSE FOUND 2026-07-21 via gdb hw-watchpoint: Publishing the ~900KB dense label blob via
-                            # update_node every ~0.5s triggers a heap-corruption SIGSEGV within ~2-5 min (bisection-
-                            # confirmed; in ~SemanticMap while destroying the drained bundle). retina's
-                            # publish_semantic() is memory-safe (attr stored BY VALUE — common_types.h:26); the fault
-                            # is in the DSR/DDS large-blob propagation (known DSR heap data race, now reliably
-                            # triggered). TRADE-OFF: residual_concept loses its 'semantic' node input while this is
-                            # off. Real fix = cortex/DSR-level or throttle/shrink the blob — TODO before flipping on.
-publish_min_interval_s = 0.5  # min seconds between semantic-node publishes (rate cap; ~2 Hz). The map is big.
-publish_probs = true        # publish the GRADED CLASS POSTERIOR field (semantic_class_probs + ids/size) on the
-                            # same 'semantic' node. This is the channel that lets a concept agent price an ABSENCE:
-                            # it samples max P(class) over its own projected silhouette and weights the absence by
-                            # how decisively the classifier lost, instead of reading silence as "not there".
-                            # ~128 kB (5 x 80 x 80 floats) vs the label map's ~1.8 MB, hence a separate gate.
-                            # Self-disabling: a no-op unless model_path points at a "-probs" export.
+decimation = 1              # HUSKY: every processed frame (was 6: ~1.9 Hz of vegetation looks). vegetation_concept and
+                            # trunk_concept weight each look by the time it stands for (their LookPeriodMs), so
+                            # the rate can change (decimation, model size, TensorRT) without retuning them.
+publish_node = false        # HUSKY: the ~1-2 MB dense label blob has no consumer here — keep it off the graph
+publish_min_interval_s = 0.5
+publish_probs = false       # graded posterior exists only in the -probs export (furniture classes)
 
-# Semantic-derived INSTANCE masks: turn the dense class field into per-connected-region masks for furniture
-# classes YOLO-seg misses (cabinet/hood/shelf/door), score them, drop anything already covered by a YOLO-seg
-# mask (YOLO is authoritative), and append to the 'masks' node — where SAM2 refines them like any other mask.
-# Enabling this also force-runs the semantic model (regardless of the "Semantic" ZED toggle) + its score map.
-# ON — furniture-mask feature (2026-07-21). Stable with Semantic.publish_node=false above: the earlier
-# reliable crash was the dense-node blob publish, NOT these masks (bisection-confirmed). Keep publish_node off.
+# Semantic-derived INSTANCE masks: one mask per connected region of an accepted class, dropped where a YOLO-seg
+# mask already covers it (YOLO is authoritative — a worker in front of a tree stays a person), appended to the
+# 'masks' node with class_id = 1000 + ADE20K id. HUSKY: the vegetation classes. NOT grass/field: low ground cover
+# is drivable and is not a plant the robot must go round.
 publish_masks = true
-accepted_labels = ["cabinet", "hood", "shelf", "door", "radiator", "counter", "countertop", "kitchen island", "chest of drawers", "railing", "bannister"]   # ADE20K-150 class names (must match the model's table); railing/bannister are relabelled to "radiator" in specificworker.cpp (COCO has no radiator → else mistaken for chairs)
+accepted_labels = ["tree", "plant", "palm", "flower"]   # ADE20K-150 class names (must match the model's table)
 mask_min_area_frac = 0.003      # drop connected components smaller than this fraction of the frame area
 mask_overlap_drop_frac = 0.5    # drop a semantic component ≥this covered by a YOLO-seg mask (YOLO priority)
 mask_morph_kernel = 5           # open+close kernel (px) to denoise the class field before component labelling; ≤1 = off
@@ -199,7 +187,7 @@ decimation = 1              # run every enabled frame (needed for every-frame pu
 mask_prior = true           # feed the YOLO mask as the decoder's mask_input prior → tighter boundaries
 mask_prior_logit = 4.0      # ±logit strength of that prior. High (8)=SAM2 echoes YOLO; low (2)=free to tighten.
                             # A/B this + mask_prior=false against the metric CSV to see what refines most.
-metrics_log = true          # log etc/sam2_refine_metrics.csv: per-object depth-bleed YOLO vs SAM2 (the win)
+metrics_log = false         # log etc/sam2_refine_metrics.csv: per-object depth-bleed YOLO vs SAM2 (the win)
 publish_refined = true      # route SAM2 masks into the published 'masks' node (→ concept fitters). When true,
                             # SAM2 runs continuously (not just when the overlay toggle is on). Only fresh
                             # (non-decimated) cycles substitute, so set decimation=1 for every-frame refinement.
@@ -210,7 +198,7 @@ refine_labels = ["table", "chair", "monitor", "tv", "bottle", "cabinet"]   # whi
 show_voxel_viewer = true
 show_yolo_viewer  = true
 show_ricoh_viewer = false   # HUSKY: no Ricoh on the Husky
-perf_log = true    # per-frame compute/yolo/pose timing -> etc/viewer_perf.csv (diagnostic; flushes CSVs every
+perf_log = false   # per-frame compute/yolo/pose timing -> etc/viewer_perf.csv (diagnostic; flushes CSVs every
                    # frame — leave OFF in production, flip true only to capture a timing trace)
                    # ★ON again 2026-08-15 to verify the round-robin panorama pass: Ricoh.yolo_strips_per_frame
                    # went 3 -> 1, so etc/viewer_perf_ricoh_worker.csv should show seg_ms ~11 ms instead of

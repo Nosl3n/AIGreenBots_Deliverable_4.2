@@ -8,6 +8,7 @@ LIST(APPEND SOURCES
   ../src/specificworker.cpp
   ../src/dds_publisher.cpp
   ../src/mesh_filter.cpp
+  ../src/mixed_pixel_filter.cpp
   ../src/urdf_mesh_loader.cpp
   ../src/webots_proto_loader.cpp
   ${MEDIA_TRANSPORT_DIR}/media_transport.cpp
@@ -26,6 +27,7 @@ LIST(APPEND HEADERS
   ../src/specificworker.h
   ../src/dds_publisher.h
   ../src/mesh_filter.h
+  ../src/mixed_pixel_filter.h
   ../src/urdf_mesh_loader.h
   ../src/webots_proto_loader.h
 )

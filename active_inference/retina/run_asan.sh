@@ -59,4 +59,4 @@ else
 fi
 
 echo "Running ./bin/retina (normal build) under LD_PRELOAD ASan; report -> /tmp/vox_asan.txt"
-exec ./bin/retina etc/config.toml 2>&1 | tee /tmp/vox_asan.txt
+exec ./bin/retina etc/config_husky.toml 2>&1 | tee /tmp/vox_asan.txt

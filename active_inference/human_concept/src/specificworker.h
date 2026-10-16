@@ -25,6 +25,7 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <genericworker.h>
@@ -44,6 +45,7 @@
 #include "human_scene_graph.h"
 #include "human_fitter.h"
 #include "human_lidar_presence.h"
+#include "../../common/vegetation/plant_discs.h"
 #include "../../common/lidar_ingestor/concept_lidar_ingestor.h"
 #include "prior_store.h"
 
@@ -125,6 +127,12 @@ private:
     std::unique_ptr<rc::ConceptLidarIngestor> lidar_ingestor_;   // helios sweeps, world frame (second look)
     std::unique_ptr<rc::HumanLidarPresence>   lidar_presence_;
     void step_lidar_presence(std::int64_t now_ms);
+
+    // ── Births: which NEW tracks may become person nodes (see gate_births) ─────────────────────────────
+    void gate_births(std::vector<rc::SkeletonBody>& bodies, const rc::veg::PlantIndex& plants, std::int64_t now_ms);
+    struct PendingBirth { int fits = 0; std::int64_t last_ms = 0; };
+    std::unordered_map<int, PendingBirth> pending_births_;   // tentative track id -> camera fits so far
+    std::uint64_t births_in_plant_ = 0, births_on_person_ = 0, births_held_ = 0, births_duplicate_ = 0;
     float        last_robot_yaw_    = 0.0f;
     std::int64_t last_robot_yaw_ms_ = 0;
 

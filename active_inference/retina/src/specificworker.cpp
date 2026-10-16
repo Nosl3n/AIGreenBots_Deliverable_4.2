@@ -1716,7 +1716,7 @@ void SpecificWorker::compute()
         if (poses_fresh and zed_res)
         {
             const auto perf_skel0 = std::chrono::steady_clock::now();
-            graph_publisher_->publish_skeletons(zed_res->frame.rgbd, poses, zed_res->frame.stamp);
+            graph_publisher_->publish_skeletons(zed_res->frame.rgbd, poses, zed_res->frame.stamp, masks_src);
             skel_ms = perf_ms(perf_skel0, std::chrono::steady_clock::now());
         }
 

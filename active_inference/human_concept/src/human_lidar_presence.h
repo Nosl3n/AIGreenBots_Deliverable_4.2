@@ -32,6 +32,7 @@
 
 #include "human_config.h"
 #include "human_instance.h"
+#include "../../common/vegetation/plant_discs.h"
 
 namespace rc {
 
@@ -52,8 +53,14 @@ public:
     // Believed torso centre (world xy) — the published pelvis, or nullopt before the first fit.
     static std::optional<Eigen::Vector2f> centre_of(const HumanInstance& inst);
 
+    // The plants (vegetation_concept). A return inside a plant's disc is the PLANT's, never a person's: it
+    // neither confirms nor follows anyone. In an orchard the canopy reaches into the torso band, and its leaves
+    // next to a worker's believed position used to keep a phantom person alive (and drag it into the row).
+    void set_plants(rc::veg::PlantIndex plants) { plants_ = std::move(plants); }
+
 private:
     const HumanConfig& cfg_;
+    rc::veg::PlantIndex plants_;
     std::int64_t prev_sweep_ms_ = 0;
 };
 

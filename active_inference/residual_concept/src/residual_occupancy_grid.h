@@ -42,6 +42,33 @@ namespace rc
 struct OccGridParams
 {
     float cell_size_m = 0.05f;      // grid resolution
+    // ── OUTDOOR SENSOR MODEL: OCCUPIED WHERE THE BEAM RETURNED, FREE WHERE IT PASSED ─────────────────────────
+    // Everything below this flag is the indoor model: per-voxel log-odds that a beam only refutes by crossing
+    // the exact height it was hit at, capacity that stiffens a cell the longer it stands, hysteresis, misses
+    // weighted down with range. All of it is right for a room, where nearly everything is static and a table
+    // must survive a few unlucky beams. In a field nearly everything that is not a plant (and plants have
+    // their own agents) MOVES — workers, the robot itself — and that machinery turns every place a person
+    // stood into a phantom that outlives them: measured on husky_apple, ~160 published residual cells in
+    // corridors with nothing in them, enough to wedge the robot in an empty corridor.
+    // With free_along_beam the rule is the plain ray model, per cycle (all sweeps of one cycle together):
+    //   * a cell an obstacle return landed in (nav band, the return judged obstacle rather than floor/body)
+    //     is OCCUPIED;
+    //   * a cell a beam crossed in the nav band and no return landed in is FREE — whatever it was before;
+    //   * a cell no beam reached keeps what it had (occluded is not free).
+    // Hits take precedence over crossings within the cycle, so a thing one beam strikes while another passes
+    // over it stays occupied. The lidar clearance radius still applies (the sensor cannot see inside it), and
+    // a crossing is not counted within k·σ(r) of its own endpoint (the return's own range noise).
+    // Each cycle's verdict is one observation of a plain 2-D log-odds cell: +l_hit for a hit, −l_miss for a
+    // crossing. It latches at occ_set (one hit) and releases as soon as free is the more likely state (lo < 0).
+    // ★WHY NOT THE BARE PER-CYCLE VERDICT: tried first, and foliage hanging into a corridor is struck by some
+    // sweeps and crossed by others, so its cells flipped every cycle — 3 million latch events in half an hour,
+    // the planner replanning on a map that never held still, the route taking 542 s instead of ~220 s. The
+    // log-odds keeps the rule (occupied only by returns, free only by crossings) and adds the one thing the
+    // bare verdict lacks, a short memory: beam_memory_logodds bounds it, so a cell a person left needs only
+    // (beam_memory_logodds / l_miss) crossings to clear — 5 sweeps, ~0.5 s at 10 Hz — while foliage struck
+    // in a good share of sweeps stays occupied instead of flickering.
+    bool  free_along_beam = false;
+    float beam_memory_logodds = 2.0f;   // |log-odds| clamp in free_along_beam mode: the memory, in evidence
     // Inverse-sensor-model log-odds (from the DetectionProb/ClutterProb sensor model). l_hit chosen so ONE hit
     // crosses occ_threshold (completeness: a single confident return → occupied in one frame).
     float l_hit       = 0.85f;      // += on a hit  (≈ log(pd/pc))
@@ -835,6 +862,11 @@ private:
         zhi = dispz_[i];
         zlo = std::min(zmn_[i], zhi);
     }
+    void integrate_sweep_beam(const Eigen::Vector3f& origin, const std::vector<Eigen::Vector3f>& points_room,
+                              const std::vector<float>* hit_weight_scale,
+                              const std::vector<std::uint8_t>* mark_mask);   // free_along_beam
+    void commit_cycle_beam();                                                    // free_along_beam
+    float self_body_weight(float px, float py) const;   // P(a return here is NOT the robot's own body)
     void mark_hit_voxel (int ix, int iy, int iz, float z, float w);   // a return landed IN this voxel
     // a beam passed THROUGH this voxel. half_h = half the beam's vertical sampling footprint here (m):
     // the crossing refutes every bin it covers, because nothing thicker than that could have hidden

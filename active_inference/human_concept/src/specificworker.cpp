@@ -24,6 +24,8 @@
 #include <locale>
 #include <print>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <QCoreApplication>
 #include <QTimer>
@@ -252,6 +254,22 @@ void SpecificWorker::compute()
     if (not G or not rt_api_ or not skeleton_source_ or not fitter_)
         return;
 
+    // ★THE WORLD NODE CAN BE REBORN UNDER US. room_node_id_ was resolved once and only re-read while 0, so when
+    // openfield_concept restarted (the launcher re-admits it) and recreated `field` with a NEW id, this agent kept
+    // the dead one: the status line read "world frame '?'", persons had no parent to hang from and none was born
+    // again until human_concept itself was restarted (found 2026-10-15). A vanished id is a reset: the persons
+    // hung from the old frame go (their RT parent is gone), the fitter forgets them, and they are reborn from the
+    // next skeletons under the new frame.
+    if (room_node_id_ != 0 and not G->get_node(room_node_id_).has_value())
+    {
+        std::println("human_concept: world frame node {} is gone (its owner restarted?) — re-binding, dropping {} person(s)",
+                     room_node_id_, fitter_->instances().size());
+        for (const auto& [id, inst] : fitter_->instances())
+            skeleton_source_->forget_track(inst.track_id);
+        fitter_->instances().clear();
+        remove_owned_person_nodes();
+        room_node_id_ = 0;
+    }
     if (room_node_id_ == 0)
     {
         const auto rooms = rc::world::frame_nodes(*G);
@@ -261,6 +279,17 @@ void SpecificWorker::compute()
 
     // Poll this cycle's bodies once; hand them to the fitter and scaffold any new tracks.
     auto bodies = skeleton_source_->poll();
+    // The plants (vegetation_concept) are space already taken: no person is born in one, and a LiDAR return in
+    // one is the plant's. Read once per cycle and shared by the birth gate and the LiDAR second look.
+    {
+        rc::veg::PlantIndex plants;
+        if (inner_eigen_)
+            plants = rc::veg::PlantIndex(rc::veg::read_plant_discs(*G, *inner_eigen_, rc::world::frame_name(*G)));
+        if (lidar_presence_)
+            lidar_presence_->set_plants(plants);
+        gate_births(bodies, plants, std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
     // Status line every 5 s: the one place that says whether skeletons arrive and persons exist.
     {
         static std::int64_t last_status = 0;
@@ -270,9 +299,11 @@ void SpecificWorker::compute()
         if (now - last_status > 5000)
         {
             last_status = now;
-            std::print("human_concept: [status] world frame '{}' | bodies received {} (last 5 s) | person nodes {}\n",
+            std::print("human_concept: [status] world frame '{}' | bodies received {} (last 5 s) | person nodes {} | "
+                       "births refused: in a plant {}, on a person {} (merged), duplicate {}, tentative {}\n",
                        G->get_name_from_id(room_node_id_).value_or("?"), bodies_seen,
-                       G->get_nodes_by_type("person").size());
+                       G->get_nodes_by_type("person").size(), births_in_plant_, births_on_person_,
+                       births_duplicate_, births_held_);
             bodies_seen = 0;
             for (const auto& [id, inst] : fitter_->instances())
                 std::print("human_concept: [status]   {} track={} P(exists)={:.2f} cam fits={} lidar pts={} follows={} "
@@ -294,6 +325,90 @@ void SpecificWorker::compute()
     prune_absent_persons();
 
     fps_counter_.print("[Compute]", 3000);
+}
+
+// ── BIRTH GATE: a skeleton on a track with no person yet must earn its node ──────────────────────────────
+// Bodies of EXISTING persons pass untouched. A body on a NEW track is tested, in this order:
+//   1. Inside a plant (vegetation_concept)? A person cannot stand where a plant stands: the skeleton was
+//      placed there by an occluding leaf's depth. Refused, and its tentative track forgotten.
+//   2. Within a body width of an existing person? Two torsos cannot overlap: it is that person, seen with a
+//      displaced depth or re-detected. It is handed to the OLDEST such person (the first one seen keeps the
+//      space) — or dropped if that person already has its own body this frame.
+//   3. Otherwise it is TENTATIVE until its track has collected BirthMinFits camera fits. A leaf-placed skeleton
+//      jumps from leaf to leaf as the robot moves and never collects them; a real worker does at once.
+void SpecificWorker::gate_births(std::vector<rc::SkeletonBody>& bodies, const rc::veg::PlantIndex& plants,
+                                 std::int64_t now_ms)
+{
+    // Two torsos cannot stand closer than about a body width — the same physical bound skeleton_source uses
+    // to merge two detections of one person within a frame.
+    constexpr float kTwoBodiesMinM = 0.5f;
+
+    std::unordered_map<int, const rc::HumanInstance*> live;   // track id -> its person
+    for (const auto& [id, inst] : fitter_->instances())
+        live[inst.track_id] = &inst;
+    std::unordered_set<int> claimed;                          // persons that already have a body this frame
+    for (const auto& b : bodies)
+        if (live.contains(b.id))
+            claimed.insert(b.id);
+
+    std::vector<rc::SkeletonBody> kept;
+    kept.reserve(bodies.size());
+    for (auto& b : bodies)
+    {
+        if (live.contains(b.id))
+        {
+            kept.push_back(std::move(b));
+            continue;
+        }
+        const Eigen::Vector3f pelvis = rc::HumanSceneGraph::pelvis_of(b.kp);
+        if (not pelvis.allFinite())
+            continue;   // cannot be placed, so cannot be born (scaffolding would skip it anyway)
+        const Eigen::Vector2f c(pelvis.x(), pelvis.y());
+
+        if (plants.containing(c) != nullptr)
+        {
+            skeleton_source_->forget_track(b.id);
+            pending_births_.erase(b.id);
+            ++births_in_plant_;
+            continue;
+        }
+
+        const rc::HumanInstance* oldest = nullptr;
+        for (const auto& [tid, inst] : live)
+            if (const auto ic = rc::HumanLidarPresence::centre_of(*inst);
+                ic.has_value() and (*ic - c).norm() < kTwoBodiesMinM and (oldest == nullptr or tid < oldest->track_id))
+                oldest = inst;
+        if (oldest != nullptr)
+        {
+            skeleton_source_->forget_track(b.id);
+            pending_births_.erase(b.id);
+            if (claimed.contains(oldest->track_id))
+            {
+                ++births_duplicate_;
+                continue;
+            }
+            b.id = oldest->track_id;
+            claimed.insert(b.id);
+            skeleton_source_->refresh_track(b.id, c, now_ms);
+            ++births_on_person_;
+            kept.push_back(std::move(b));
+            continue;
+        }
+
+        auto& pending = pending_births_[b.id];
+        ++pending.fits;
+        pending.last_ms = now_ms;
+        if (pending.fits < cfg_.birth_min_fits)
+        {
+            ++births_held_;
+            continue;
+        }
+        pending_births_.erase(b.id);
+        kept.push_back(std::move(b));
+    }
+    // A tentative track not seen for a while has gone (skeleton_source retires its tracks after 3 s).
+    std::erase_if(pending_births_, [now_ms](const auto& kv) { return now_ms - kv.second.last_ms > 3000; });
+    bodies = std::move(kept);
 }
 
 void SpecificWorker::step_lidar_presence(std::int64_t now_ms)

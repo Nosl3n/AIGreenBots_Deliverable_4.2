@@ -266,6 +266,11 @@ void OccupancyGrid::commit_cycle(float dt_s)
     ++cycle_;
     releases_.clear();
     latches_.clear();
+    if (p_.free_along_beam)
+    {
+        commit_cycle_beam();
+        return;
+    }
     // ONE update per VOXEL: hit precedence within the voxel, then the 2-D cell is a PROJECTION of its column.
     // This is costmap_2d::VoxelLayer's contract, with grid2d's log-odds rule as the per-voxel update.
     //
@@ -506,6 +511,12 @@ void OccupancyGrid::integrate_sweep(const Eigen::Vector3f& origin, const std::ve
         std::fill(smiss_src_.begin(), smiss_src_.end(), 0);
         std::fill(shit_src_.begin(), shit_src_.end(), 0);
     }
+    if (p_.free_along_beam)
+    {
+        integrate_sweep_beam(origin, points_room, use_scale ? hit_weight_scale : nullptr,
+                             use_mask ? mark_mask : nullptr);
+        return;
+    }
     const float cs = 1.0f / inv_cell_;
     const float bw = p_.bin_span_m / OccGridParams::Z_BINS;                  // voxel height
     const float ox = origin.x(), oy = origin.y(), oz = origin.z();
@@ -531,25 +542,7 @@ void OccupancyGrid::integrate_sweep(const Eigen::Vector3f& origin, const std::ve
     { return (r0 > 0.0f ? rel * (r0 * r0) / (r0 * r0 + r * r) : rel) * pose_w(r); };
     // SELF-BODY term: P(this return came from the WORLD, not off our own body) = Φ(s/σ). HITS only — freeing
     // space is always safe, and the sensor's own voxel already emits a traversal.
-    const auto world_w = [&](float px, float py)
-    {
-        const float sigma = std::max(1e-3f, p_.self_body_sigma_m);
-        float s;                                                                // >0 outside the body envelope
-        if (box_on_)
-        {
-            // Signed distance to the oriented rectangle (robot frame: x right, y forward).
-            const float dx = px - box_cx_, dy = py - box_cy_;
-            const float lx = box_c_ * dx + box_s_ * dy, ly = -box_s_ * dx + box_c_ * dy;
-            const float qx = std::abs(lx) - box_hw_, qy = std::abs(ly) - box_hd_;
-            s = std::hypot(std::max(qx, 0.0f), std::max(qy, 0.0f)) + std::min(std::max(qx, qy), 0.0f);
-        }
-        else
-        {
-            if (self_r_ <= 0.0f) return 1.0f;
-            s = std::hypot(px - self_x_, py - self_y_) - self_r_;
-        }
-        return 0.5f * std::erfc(-s / (sigma * 1.41421356f));                 // Φ(s/σ)
-    };
+    const auto world_w = [&](float px, float py) { return self_body_weight(px, py); };
 
     for (std::size_t pi = 0; pi < points_room.size(); ++pi)
     {
@@ -690,6 +683,156 @@ void OccupancyGrid::integrate_sweep(const Eigen::Vector3f& origin, const std::ve
     }
 }
 
+
+float OccupancyGrid::self_body_weight(float px, float py) const
+{
+    const float sigma = std::max(1e-3f, p_.self_body_sigma_m);
+    float s;                                                                // >0 outside the body envelope
+    if (box_on_)
+    {
+        // Signed distance to the oriented rectangle (robot frame: x right, y forward).
+        const float dx = px - box_cx_, dy = py - box_cy_;
+        const float lx = box_c_ * dx + box_s_ * dy, ly = -box_s_ * dx + box_c_ * dy;
+        const float qx = std::abs(lx) - box_hw_, qy = std::abs(ly) - box_hd_;
+        s = std::hypot(std::max(qx, 0.0f), std::max(qy, 0.0f)) + std::min(std::max(qx, qy), 0.0f);
+    }
+    else
+    {
+        if (self_r_ <= 0.0f) return 1.0f;
+        s = std::hypot(px - self_x_, py - self_y_) - self_r_;
+    }
+    return 0.5f * std::erfc(-s / (sigma * 1.41421356f));                 // Φ(s/σ)
+}
+
+void OccupancyGrid::integrate_sweep_beam(const Eigen::Vector3f& origin, const std::vector<Eigen::Vector3f>& points_room,
+                                        const std::vector<float>* hit_weight_scale,
+                                        const std::vector<std::uint8_t>* mark_mask)
+{
+    const float cs = 1.0f / inv_cell_;
+    const float ox = origin.x(), oy = origin.y(), oz = origin.z();
+    int ocx, ocy;
+    const bool origin_in = world_to_cell(ox, oy, ocx, ocy);
+    const auto mark_free = [&](int ix, int iy, float z)
+    {
+        const int i = idx(ix, iy);
+        slook_[i] = 1;
+        if (not smiss_[i]) { smiss_[i] = 1; smiss_w_[i] = 1.0f; smiss_z_[i] = z; smiss_src_[i] = sensor_id_; }
+    };
+    const auto blind = [&](int ix, int iy)          // inside the lidar clearance radius: nothing can be seen there
+    {
+        if (clear_r2_ <= 0.0f or not observer_valid_) return false;
+        float wx, wy; cell_to_world(ix, iy, wx, wy);
+        const float ddx = wx - self_x_, ddy = wy - self_y_;
+        return ddx * ddx + ddy * ddy < clear_r2_;
+    };
+
+    for (std::size_t pi = 0; pi < points_room.size(); ++pi)
+    {
+        const auto& p = points_room[pi];
+        const float px = p.x(), py = p.y(), pz = p.z();
+        if (not (std::isfinite(px) and std::isfinite(py) and std::isfinite(pz))) { ++sd_.bad_points; continue; }
+        const float dx = px - ox, dy = py - oy, dz = pz - oz;
+        const float range = std::hypot(dx, dy);
+        const float band_top = fp_a_ * px + fp_b_ * py + fp_c_ + device_floor_z0() + p_.floor_slope * range;
+        const bool in_band = pz > band_top and pz < p_.ceil_z;
+        const bool below_band = pz <= band_top;
+        if (not in_band) ++sd_.floor_endpoint_returns;
+
+        // IS THIS RETURN AN OBSTACLE? The same responsibilities the indoor model weighs a return by — the
+        // floor's, the robot body's, the semantic floor label (hit_weight_scale) — read as a MAP decision, as the
+        // read-out already does for "explained". Range and pose precision are not in it: they say how sharply we
+        // know WHERE the return is, not WHAT it is.
+        const float p_obstacle = self_body_weight(px, py) * floor_obstacle_responsibility(px, py, pz, range)
+                               * (hit_weight_scale ? (*hit_weight_scale)[pi] : 1.0f);
+        const bool may_mark = mark_mask == nullptr or (*mark_mask)[pi] != 0;
+        if (not may_mark) ++sd_.marks_suppressed;
+        const bool obstacle = in_band and may_mark and p_obstacle > 0.5f;
+
+        int ex, ey;
+        const bool endp_in = world_to_cell(px, py, ex, ey);
+        if (endp_in and obstacle)
+            mark_hit_voxel(ex, ey, z_bin(pz), pz, 1.0f);
+        else if (endp_in and below_band and not blind(ex, ey))
+        { mark_free(ex, ey, pz); ++sd_.floor_endpoint_clears; }   // a ground return: nothing stood in its cell
+
+        // The beam's 2-D trace, sensor -> return. A crossing is evidence only where the beam is IN the nav band
+        // there (over the band it says nothing about what stands below it), outside the clearance radius, and
+        // further from the return than its own range noise (k·σ(r), as the indoor model's endpoint margin).
+        if (not origin_in or range < 1e-4f) continue;
+        const float sig_e = sens_s0_ > 0.0f ? sens_s0_ + sens_quad_ * range * range : p_.reference_sigma_m;
+        const float s_max = range - p_.clear_stop_sigma_k * sig_e;
+        const float ux = dx / range, uy = dy / range, slope = dz / range;
+        const int stepx = ux > 0 ? 1 : -1, stepy = uy > 0 ? 1 : -1;
+        const float BIG = std::numeric_limits<float>::max();
+        float tMaxX = std::abs(ux) > 1e-9f ? (xmin_ + (ocx + (stepx > 0 ? 1 : 0)) * cs - ox) / ux : BIG;
+        float tMaxY = std::abs(uy) > 1e-9f ? (ymin_ + (ocy + (stepy > 0 ? 1 : 0)) * cs - oy) / uy : BIG;
+        const float tDx = std::abs(ux) > 1e-9f ? cs / std::abs(ux) : BIG;
+        const float tDy = std::abs(uy) > 1e-9f ? cs / std::abs(uy) : BIG;
+        int cx = ocx, cy = ocy;
+        for (int guard = 2 * (w_ + h_); guard > 0; --guard)
+        {
+            const float s_in = std::min(tMaxX, tMaxY);      // where the beam enters the next cell
+            if (tMaxX < tMaxY) { cx += stepx; tMaxX += tDx; } else { cy += stepy; tMaxY += tDy; }
+            if (s_in >= s_max or not in_bounds(cx, cy) or (cx == ex and cy == ey)) break;
+            const float s_mid = std::min(0.5f * (s_in + std::min(tMaxX, tMaxY)), range);
+            const float z = oz + slope * s_mid;
+            float wx, wy; cell_to_world(cx, cy, wx, wy);
+            const float cell_band_top = fp_a_ * wx + fp_b_ * wy + fp_c_ + device_floor_z0() + p_.floor_slope * s_mid;
+            if (z <= cell_band_top or z >= p_.ceil_z) continue;
+            if (blind(cx, cy)) { ++sd_.clear_blind_shell; continue; }
+            mark_free(cx, cy, z);
+        }
+    }
+}
+
+void OccupancyGrid::commit_cycle_beam()
+{
+    const float cap = std::max(p_.l_hit, p_.beam_memory_logodds);
+    for (std::size_t i = 0; i < lo_.size(); ++i)
+    {
+        if (not shit_[i] and not smiss_[i])
+            continue;                                       // no beam reached it: it keeps what it had
+        const float lo_before = lo_[i];
+        const float prev_lo = zmn_[i], prev_hi = zmx_[i], prev_top = dispz_[i];
+        if (shit_[i])                                       // a return landed here (precedence over crossings)
+        {
+            ++sd_.hits;
+            hit_since_[i] = cycle_;
+            lo_[i] = std::min(cap, lo_[i] + p_.l_hit);
+            zmn_[i] = hit_[i] ? std::min(zmn_[i], shz_lo_[i]) : shz_lo_[i];
+            zmx_[i] = hit_[i] ? std::max(zmx_[i], shz_hi_[i]) : shz_hi_[i];
+            dispz_[i] = hit_[i] ? dispz_[i] + 0.4f * (shz_hi_[i] - dispz_[i]) : shz_hi_[i];
+            hit_[i] = 1;
+        }
+        else                                                // a beam crossed it and nothing returned
+        {
+            ++sd_.misses;
+            lo_[i] = std::max(-cap, lo_[i] - p_.l_miss);
+        }
+        kobs_[i] = p_.beta_kappa_max;
+        seenf_[i] = 1.0f;
+        float* sup = &zsup_[i * OccGridParams::Z_BINS];     // the belief readout (column_prob) reads the same lo
+        std::fill(sup, sup + OccGridParams::Z_BINS, lo_[i]);
+
+        if (not occ_[i] and lo_[i] > p_.occ_set)
+        {
+            occ_[i] = 1; occ_since_[i] = cycle_; ++sd_.cells_latched;
+            LatchEvent le;
+            cell_to_world(static_cast<int>(i % w_), static_cast<int>(i / w_), le.x, le.y);
+            le.z = zmx_[i]; le.lo = lo_[i]; le.w = 1.0f; le.bins = 1; le.src = shit_src_[i];
+            le.range_m = observer_valid_ ? std::hypot(le.x - self_x_, le.y - self_y_) : -1.0f;
+            le.robot_x = self_x_; le.robot_y = self_y_;
+            latches_.push_back(le);
+        }
+        else if (occ_[i] and lo_[i] < 0.0f)                 // free is now the more likely state
+        {
+            occ_[i] = 0; ++sd_.cells_released;
+            trace_release(i, lo_before, smiss_z_[i], 1.0f, 0, prev_lo, prev_hi, prev_top);
+        }
+        if (not occ_[i] and lo_[i] < 0.0f)
+        { hit_[i] = 0; zmn_[i] = zmx_[i] = dispz_[i] = 0.0f; }
+    }
+}
 
 std::vector<std::uint8_t> OccupancyGrid::residual_mask(const CellExplained& explained,
                                                       std::vector<std::uint8_t>* speckle_out) const
@@ -2143,6 +2286,52 @@ bool OccupancyGrid::self_test()
         check(fuzzy > sharp, "...but the same return through an unconverged pose must NOT latch in one frame: "
                              "that is the startup phantom floor, and speed-trust alone cannot see it");
         check(fuzzy > 0, "...and it must still latch eventually - this weights evidence, it does not gate it");
+    }
+    // ── free_along_beam (the outdoor ray model) ──────────────────────────────────────────────────────────────
+    // A person at (2,0) walks to (2,1): its old cell must be FREE in the very next cycle, because beams now
+    // cross it to a fence at x=4. A stone at (3,-1) that this cycle's beams do not reach must keep its state
+    // (occluded is not free), and a beam rising over a low stone must not erase it.
+    {
+        OccGridParams B; B.free_along_beam = true;
+        const Eigen::Vector3f lidar(0.0f, 0.0f, 1.0f);
+        const auto body_at = [](float x, float y, std::vector<Eigen::Vector3f>& v)
+        { for (float z = 0.3f; z <= 1.0f; z += 0.1f) v.push_back({x, y, z}); };
+        OccupancyGrid g; g.reset(-1, -3, 6, 3, B);
+        std::vector<Eigen::Vector3f> s1; body_at(2.0f, 0.0f, s1); s1.push_back({3.0f, -1.0f, 0.3f});
+        g.integrate_sweep(lidar, s1); g.commit_cycle(0.1f);
+        int px, py, sx, sy, nx, ny; g.world_to_cell(2.0f, 0.0f, px, py); g.world_to_cell(3.0f, -1.0f, sx, sy);
+        g.world_to_cell(2.0f, 1.0f, nx, ny);
+        check(g.occupied(px, py) and g.occupied(sx, sy), "beam model: a return makes its cell occupied at once");
+        for (int k = 0; k < 20; ++k) { g.integrate_sweep(lidar, s1); g.commit_cycle(0.1f); }   // stood there 2 s
+        std::vector<Eigen::Vector3f> s2; body_at(2.0f, 1.0f, s2);
+        for (float z = 0.4f; z <= 0.9f; z += 0.1f) s2.push_back({4.0f, 0.0f, z});   // the fence, through (2,0)
+        int cleared_after = -1;
+        for (int k = 1; k <= 20 and cleared_after < 0; ++k)
+        {
+            g.integrate_sweep(lidar, s2); g.commit_cycle(0.1f);
+            if (not g.occupied(px, py)) cleared_after = k;
+        }
+        std::printf("  beam model: person's old cell free after %d sweeps, new cell occupied=%d, unreached stone "
+                    "occupied=%d\n", cleared_after, g.occupied(nx, ny), g.occupied(sx, sy));
+        check(cleared_after > 0 and cleared_after <= 6,
+              "beam model: a cell the beams now cross must clear within a few sweeps (~0.5 s), however long it stood");
+        check(g.occupied(nx, ny), "beam model: ...and the cell the person stepped into occupied");
+        check(g.occupied(sx, sy), "beam model: a cell no beam reached keeps its state (occluded is not free)");
+        OccupancyGrid h; h.reset(-1, -3, 6, 3, B);
+        std::vector<Eigen::Vector3f> stone = {{2.0f, 0.0f, 0.3f}}, over = {{4.0f, 0.0f, 4.0f}};
+        h.integrate_sweep(lidar, stone); h.commit_cycle(0.1f);
+        h.integrate_sweep(lidar, over);  h.commit_cycle(0.1f);
+        check(h.occupied(px, py), "beam model: a beam ABOVE the nav band says nothing about what stands below it");
+        // Foliage: struck in one sweep out of three, crossed in the other two. It must not flicker away.
+        OccupancyGrid l; l.reset(-1, -3, 6, 3, B);
+        std::vector<Eigen::Vector3f> leaf = {{2.0f, 0.0f, 0.9f}}, through = {{4.0f, 0.0f, 0.9f}};
+        int occupied_cycles = 0;
+        for (int k = 0; k < 60; ++k)
+        {
+            l.integrate_sweep(lidar, k % 3 == 0 ? leaf : through); l.commit_cycle(0.1f);
+            occupied_cycles += k >= 30 and l.occupied(px, py);
+        }
+        std::printf("  beam model: foliage struck 1 sweep in 3 -> occupied %d of the last 30 cycles\n", occupied_cycles);
     }
     std::printf("OccupancyGrid::self_test %s\n", ok ? "PASS" : "FAIL");
     return ok;

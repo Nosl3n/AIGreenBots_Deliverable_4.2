@@ -85,7 +85,7 @@ PublishSafetyMarginM = 0.05   # + this clearance on EACH footprint side (robot c
 DissolveExplainedFrac = 0.60  # (with a specialist) fraction of interior explained → dissolve (fission accel)
 RtCovAddChain = true          # add J·Σ_chain·Jᵀ localization cov to the published RT cov
 UnobservableVar = 9.87        # ≈π² — roll/pitch unobservable for a footprint box
-DiagCsvPath = "etc/residual_diag.csv"   # per-cluster diagnostic CSV; empty = off
+DiagCsvPath = ""   # per-cluster diagnostic CSV ("etc/residual_diag.csv"); empty = off
 
 # ── Belief (AI2 box-footprint fit; the ONLY fit path) ─────────────────────────
 [ResidualModel]
@@ -335,6 +335,14 @@ CollisionBandTopM = 0.50
 # Match it to the lidar3d driver's [Footprint] radius, the same number SelfBodyRadiusM uses, so both agree on
 # one body model. Watch `blind_shell` in grid_diag.csv — it must be NONZERO whenever the robot is moving.
 LidarClearanceM = 0.55
+# FIELD (Husky): the plain ray model. A cell is OCCUPIED only where an obstacle return landed this cycle and FREE
+# wherever a beam crossed it in the nav band without returning; cells no beam reached keep their state. The
+# indoor model (per-height refutation, stiffening, hysteresis, range-weighted misses) assumes a mostly static
+# room and left every place a worker had stood as a phantom (~160 cells in empty corridors, the robot wedged).
+FreeAlongBeam = true
+# ...integrated as a 2-D log-odds per cell (+0.85 a hit, -0.40 a crossing) clamped to +-BeamMemoryLogOdds: a cell
+# a worker left clears after ~5 crossing sweeps (~0.5 s); foliage struck in one sweep out of three stays put.
+BeamMemoryLogOdds = 2.0
 
 # ── THE ROBOT'S OWN SHAPE (Husky) ────────────────────────────────────────────────────────────────────────────
 # "robot" = discount returns off the robot's real footprint (body width_m/depth_m, measured from husky_a300.obj:
@@ -391,7 +399,7 @@ CellDumpEveryN = 25
 
 # Per-released-cell trace: which residual went, and what killed it. A standing table must produce NO rows inside
 # its footprint. Empty = off.
-ReleaseCsvPath = "etc/residual_releases.csv"
+ReleaseCsvPath = ""   # diagnostic, off by default: "etc/residual_releases.csv"
 
 # ── EACH DEVICE'S DEAD SHELL: a beam cannot refute what the sensor could not have seen ────────────────────────
 # Every ray starts AT the sensor, so the raytrace marks the voxels around the robot free — weighted by w(r),

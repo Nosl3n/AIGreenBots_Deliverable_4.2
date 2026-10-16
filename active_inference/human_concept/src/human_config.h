@@ -66,6 +66,10 @@ struct HumanConfig
     // cycle count: frames_since_detection only advanced when fresh data arrived, so a person who stopped being
     // seen was never counted as absent and lived forever (2026-10-01: 35 nodes for 2 workers).
     float death_timeout_s    = 2.0f;   // now: seconds with NO evidence at all (neither camera nor LiDAR)
+    // A new track becomes a person node only after this many camera fits on the SAME track (a tentative track
+    // until then). A skeleton placed in a crop row by an occluding leaf jumps from leaf to leaf as the robot
+    // moves, so it never collects them; a real worker does within a fraction of a second.
+    int   birth_min_fits     = 3;
 
     // ── LiDAR "second look" (existence + follow; see human_lidar_presence.h) ─────────────────────────
     bool  lidar_enabled        = true;

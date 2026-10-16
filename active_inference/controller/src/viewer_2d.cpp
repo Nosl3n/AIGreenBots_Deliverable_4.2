@@ -98,6 +98,13 @@ ObstaclePalette obstacle_palette(ControllerObstacleKind kind, int object_slot = 
             QColor(220, 40, 60, 70),
             QColor(150, 20, 40, 120),
             QColor(150, 20, 40, 120)};
+        case ControllerObstacleKind::Plant:
+        // trunk_concept trunk discs — ONE fixed bark brown for every trunk: a trunk is read as "forbidden space
+        // here", not as an individual to tell apart from its neighbours, and a row of them must read as a row.
+        return {QColor(0x6d, 0x4c, 0x41),
+            QColor(0x8d, 0x6e, 0x63, 110),
+            QColor(0x6d, 0x4c, 0x41, 220),
+            QColor(0x4e, 0x34, 0x2e, 230)};
         default:
         return {QColor(194, 103, 25),
             QColor(245, 158, 11, 150),

@@ -322,7 +322,7 @@ std::vector<SegDetection> YoloSegDetector::detect(const cv::Mat& image, bool is_
     }
 
     cv::Mat rgb;
-    if (is_rgb)
+    if (!is_rgb)
         rgb = image;
     else
         cv::cvtColor(image, rgb, cv::COLOR_BGR2RGB);

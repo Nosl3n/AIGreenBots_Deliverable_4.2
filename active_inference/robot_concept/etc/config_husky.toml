@@ -39,7 +39,7 @@ scenario   = "field"      # agricultural open field (webots-agri)
                        # axis of its own. Published as the `scenario_name` attribute on the robot node;
                        # room_concept selects its floor plan from it and REFUSES TO START without it,
                        # because it authors the polygon every other agent reads.
-base_config_file = "/home/nosl3n/robocomp/AiGB_UEx_Navigation/active_inference/robot_concept/etc/base_husky.toml"
+base_config_file = "etc/base_husky.toml"   # relative to robot_concept/ (launchers cd into it)
                        # THE base's own config, and the SAME file the real robot runs. Source of truth for
                        # what this hardware CAN do (maxLinSpeed, maxRotSpeed, maxAcceleration/Deceleration)
                        # and for its geometry (wheelRadius, axesLength), plus `baseType`, from which

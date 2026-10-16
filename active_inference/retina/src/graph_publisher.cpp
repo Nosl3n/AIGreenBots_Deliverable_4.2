@@ -910,10 +910,11 @@ void GraphPublisher::upload_masks(const RGBDData& rgbd, const Mat::RTMat& room_T
 
 void GraphPublisher::publish_skeletons(const RGBDData& rgbd,
                                        const std::vector<rc::human_pose::PoseDetection>& poses,
-                                       std::uint64_t frame_ts_ms)
+                                       std::uint64_t frame_ts_ms,
+                                       const std::vector<SegDetection>* masks)
 {
     if (ensure_node("skeleton", "MediumAquamarine", skeleton_ready_, /*relayout=*/true))
-        upload_skeletons(rgbd, poses, frame_ts_ms);
+        upload_skeletons(rgbd, poses, frame_ts_ms, masks);
 }
 
 // Deproject YOLO-pose keypoints to BODY_18 3D in the CAMERA (zed) frame and publish on the
@@ -924,7 +925,8 @@ void GraphPublisher::publish_skeletons(const RGBDData& rgbd,
 // the consumer's job (human_concept owns the person node + its RT edge).
 void GraphPublisher::upload_skeletons(const RGBDData& rgbd,
                                       const std::vector<rc::human_pose::PoseDetection>& poses,
-                                      std::uint64_t frame_ts_ms)
+                                      std::uint64_t frame_ts_ms,
+                                      const std::vector<SegDetection>* masks)
 {
     namespace hp = rc::human_pose;
 
@@ -946,8 +948,38 @@ void GraphPublisher::upload_skeletons(const RGBDData& rgbd,
     const float kp_conf_min = params_.SKELETON_KP_CONF_MIN;
     const int   patch = std::max(0, params_.SKELETON_DEPTH_PATCH);
 
+    // ── OCCLUSION BY FOLIAGE: sample a joint's depth only where the PERSON is ─────────────────────────
+    // ★WHY. The joint's pixel says WHERE the person is in the image, not that the person is the first
+    // surface along that ray. In a crop row a leaf in front of a hip owns the hip's pixels in the depth
+    // map, so the hip came out at the LEAF's range and human_concept placed (and birthed) a person inside
+    // the plant row — a new one each time the robot moved and other leaves took over. YOLO-seg's person
+    // mask covers only the person's VISIBLE pixels (an occluding leaf is not in it), so restricting the
+    // patch to that mask makes an occluded joint come out as "no depth" (NaN) instead of a wrong depth;
+    // the body model in human_concept fills it from the joints that ARE seen. Matched per pose by box IoU.
+    const cv::Mat* person_mask = nullptr;
+    auto match_person_mask = [&](const cv::Rect& pose_box) -> const cv::Mat*
+    {
+        if (masks == nullptr)
+            return nullptr;
+        const cv::Mat* best = nullptr;
+        float best_iou = 0.0f;
+        for (const auto& d : *masks)
+        {
+            // Instance masks only: semantic ones carry class_id >= 1000 (semantic_mask_stage.cpp).
+            if (d.class_id >= 1000 or d.label != "person" or d.mask.empty()
+                or d.mask.rows != rgbd.height or d.mask.cols != rgbd.width)
+                continue;
+            const float inter = static_cast<float>((pose_box & d.bbox).area());
+            const float uni = static_cast<float>(pose_box.area() + d.bbox.area()) - inter;
+            if (uni > 0.0f and inter / uni > best_iou) { best_iou = inter / uni; best = &d.mask; }
+        }
+        // Two boxes of the SAME person overlap heavily; a neighbour's box only grazes this one.
+        return best_iou >= 0.3f ? best : nullptr;
+    };
+
     // Median depth over a (2*patch+1) window around (col,row); 0 if no valid sample. A single-pixel
     // depth on a thin limb is often missing/noisy, so a small patch stabilises the joint range.
+    // With a person mask, only the patch pixels ON the mask count (see above).
     auto sample_depth = [&](int col, int row) -> float
     {
         std::vector<float> vals;
@@ -956,6 +988,8 @@ void GraphPublisher::upload_skeletons(const RGBDData& rgbd,
             for (int c = col - patch; c <= col + patch; ++c)
             {
                 if (r < 0 || c < 0 || r >= rgbd.height || c >= rgbd.width)
+                    continue;
+                if (person_mask != nullptr and person_mask->at<std::uint8_t>(r, c) <= 127)
                     continue;
                 const std::size_t idx = static_cast<std::size_t>(r) * rgbd.width + static_cast<std::size_t>(c);
                 if (idx >= rgbd.depth.size())
@@ -1002,11 +1036,36 @@ void GraphPublisher::upload_skeletons(const RGBDData& rgbd,
         const auto& pose = poses[p];
 
         // Deproject the 17 COCO joints first; BODY_18 then reorders + synthesizes the neck in 3D.
+        person_mask = match_person_mask(pose.bbox);
         std::array<Eigen::Vector3f, hp::NUM_COCO_KP> coco_xyz;
         std::array<bool,  hp::NUM_COCO_KP> coco_ok{};
         for (int k = 0; k < hp::NUM_COCO_KP; ++k)
             coco_ok[static_cast<std::size_t>(k)] = deproject_coco(pose.kp[static_cast<std::size_t>(k)],
                                                                   coco_xyz[static_cast<std::size_t>(k)]);
+
+        // ── DEPTH ORDERING: an occluder is always IN FRONT ──────────────────────────────────────────
+        // The mask is drawn from the image and can bleed a few pixels onto the leaf at its edge, so a joint
+        // can still pick up a foreground range. A body is ~0.3 m deep front to back (an arm reaching
+        // forward a little more), so a joint more than kBodyDepthM nearer than the body's median range is
+        // not on this body: it is the surface in front of it. Drop it (NaN). Only the NEAR side is cut —
+        // the background behind a person is already excluded by the mask.
+        constexpr float kBodyDepthM = 0.5f;
+        {
+            std::array<float, hp::NUM_COCO_KP> ranges{};
+            int n = 0;
+            for (int k = 0; k < hp::NUM_COCO_KP; ++k)
+                if (coco_ok[static_cast<std::size_t>(k)])
+                    ranges[static_cast<std::size_t>(n++)] = coco_xyz[static_cast<std::size_t>(k)].y();
+            if (n >= 3)
+            {
+                std::nth_element(ranges.begin(), ranges.begin() + n / 2, ranges.begin() + n);
+                const float body_range = ranges[static_cast<std::size_t>(n / 2)];
+                for (int k = 0; k < hp::NUM_COCO_KP; ++k)
+                    if (coco_ok[static_cast<std::size_t>(k)]
+                        and coco_xyz[static_cast<std::size_t>(k)].y() < body_range - kBodyDepthM)
+                        coco_ok[static_cast<std::size_t>(k)] = false;
+            }
+        }
 
         ids.push_back(pose.track_id >= 0 ? static_cast<float>(pose.track_id) : static_cast<float>(p));
 

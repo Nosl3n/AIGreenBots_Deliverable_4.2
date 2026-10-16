@@ -246,7 +246,8 @@ public:
 
     // Dense per-pixel labels for the frame. Empty SemanticMap if not configured / frame empty.
     // Caches the result so a decimated caller can reuse the last map on skipped cycles.
-    [[nodiscard]] SemanticMap segment(const cv::Mat& rgb_frame, bool want_scores = false);
+    // `bgr_frame` is BGR, as retina carries every frame (converted to RGB for the model inside).
+    [[nodiscard]] SemanticMap segment(const cv::Mat& bgr_frame, bool want_scores = false);
 
     [[nodiscard]] const SemanticMap& last_map() const noexcept { return last_map_; }
 

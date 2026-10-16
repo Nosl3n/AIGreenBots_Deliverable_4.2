@@ -11,6 +11,10 @@ simulator = true
 
 # DDS publish gate + robot-body self-filter dilate (flat keys)
 PublishDDS = true
+# 2026-10-15: kept at 0.05. ~3 returns/sweep off the top plate's left upper edge (robot (-0.34, 0.13..0.31, 0.37),
+# 2 mm from husky_a300.stl) survived it — and survived 0.08 too: the proximity test cast only the 6 AXIS rays,
+# which cannot reach a point diagonally beyond a convex edge at any dilate. mesh_filter.cpp now casts 26
+# (faces, edges, corners); the margin was never the problem.
 Dilate = 0.05
 
 # Static mount (single source of geometry): read the body<-helios transform from the DSR shadow.json.
@@ -19,7 +23,7 @@ Dilate = 0.05
 # the rx..tz fallback below (kept in sync at tz=1030).
 # Mount read from this repo's husky.json (body<-helios RT edge), the same file robot_concept seeds the
 # graph from, so the driver and the DSR cannot disagree about where the helios is.
-mount_file = "/home/nosl3n/robocomp/AiGB_UEx_Navigation/active_inference/robot_concept/husky.json"
+mount_file = "../../../../../active_inference/robot_concept/husky.json"   # relative to this component (launchers cd into it)
 mount_key  = "helios"
 rx = -0.0
 # 2026-08-29: 0 -> pi. The helios is now mounted UPSIDE DOWN (wide part of the fan pointing UP, at
@@ -42,6 +46,15 @@ ty = -250.0      # HuskyA300.proto heliosTranslation 0 -0.25 0.95 (mm)
 # already in sync. ★If shadow.json's mounts change, change these too — or better, make the rollback
 # refuse to start rather than proceed on numbers nobody checked.
 tz = 950.0        # fallback only; MUST equal husky.json body<-helios z (0.95 m)
+
+# Mixed pixels: returns floating BETWEEN two surfaces at a depth edge (leaf / ground, leaf / sky) — the helios in
+# Webots makes one at nearly every leaf edge, real lidars make them too. A return is dropped when NONE of its 8 scan
+# neighbours lies at a similar range (|dr| < max(abs_tol_m, rel_tol * r)). Runs on the full cloud, before the
+# self-filter. See src/mixed_pixel_filter.h for the measurements (2026-10-15). enabled = false: off, no cost.
+[MixedPixel]
+enabled = true
+rel_tol = 0.05
+abs_tol_m = 0.10
 
 [Proxies]
 # Proxies for required interfaces

@@ -22,6 +22,7 @@ const char *obstacle_kind_tag(ControllerObstacleKind kind)
         case ControllerObstacleKind::Obstacle:      return "obstacle";  // a graph "obstacle" node
         case ControllerObstacleKind::Temporary:     return "temp";      // controller-born (LiDAR or escape disc)
         case ControllerObstacleKind::GridOccupancy: return "grid";      // residual_concept occupancy hull
+        case ControllerObstacleKind::Plant:         return "trunk";     // trunk_concept forbidden disc
     }
     return "?";
 }

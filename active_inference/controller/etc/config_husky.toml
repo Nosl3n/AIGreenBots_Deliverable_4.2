@@ -111,12 +111,13 @@ RobotMeshYawDeg = 0.0     # husky_a300.obj is authored in the robot frame (+Y fo
 # optimiser already reached the same place, so the post-optimiser numbers barely moved — the gain is
 # expected where the optimiser CANNOT help: tight passages where its clearance term saturates.
 ClearanceWeight = 1.5
-ClearancePref = 0.9
+ClearancePref = 0.6   # HUSKY: 0.9 (indoors) cannot be met in a 2.5 m orchard corridor with 0.5 m trunk discs (0.75 m from
+                      # the centre line), so the planner went AROUND the orchard; 0.6 is a preference a corridor satisfies
 
 [Controller]
 # true = behave as if Run were pressed at startup (headless runs, goals from utils/send_goal.py).
 # false (normal use) = press Run or click a goal in the 2D view.
-ArmOnStart = false
+ArmOnStart = true   # armed at start: goals from utils/send_goal.py / utils/run_route.py are followed without pressing Run
 # People (human_concept `person` nodes) as discs of this radius: body (~0.3 m) + room to leave a person.
 # In a 1.3 m palm corridor a person standing in it blocks it, and the robot waits or takes another one.
 PersonRadiusM = 0.8
@@ -865,7 +866,7 @@ StuckVirtualObstacleTTLms = 5000     # lifetime before it ages out
 # Near-obstacle "black box": append a CSV row whenever the robot is within ProximityLogDistance of a
 # tracked obstacle OR the trajectory ESDF drops that low. Lets a collision be explained afterwards
 # (nearest_obst_m small but min_esdf large ⇒ the controller never saw it — e.g. self-occlusion).
-ProximityLogEnabled = true
+ProximityLogEnabled = false   # diagnostic: enable when measuring obstacle proximity
 ProximityCsvPath = "proximity_obstacles.csv"
 ProximityLogDistance = 0.8   # m; gate distance for logging a row (raw lidar / tracked obstacle / ESDF)
 
@@ -923,7 +924,7 @@ rt_twist_compensation = true
 
 # Append per-cycle overlay-lag diagnostics to this CSV (empty = off). Columns:
 # t_ms,lidar_ts,gap_ms,vx,vy,omega,extrap_dt_s,disp_m,dtheta_rad,RTdelta_m
-overlay_csv_path = "overlay_lag_eval.csv"
+overlay_csv_path = ""   # diagnostic, off by default: "overlay_lag_eval.csv" to measure
 
 # NOTE: the zero-copy media plane (LiDAR) needs NO config here. The DDS domain +
 # topic are read from the media descriptor JSON attribute the producer

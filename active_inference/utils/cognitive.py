@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """RoboComp cognitive launcher + monitor v2.
 
-Launches the concept agents in cognitive.toml, shows a rich console table, and publishes
-their state to the shared /tmp registry (feeding the same web monitor as subcognitive_v2).
+Launches the concept agents in cognitive_husky.toml, shows a rich console table, and publishes
+their state to the shared /tmp registry (feeding the same web monitor as subcognitive.py).
 Cognitive agents talk over the DSR graph: each is grouped under a symbolic DSR sphere by
 its [Agent] domain, on top of any ICE edges they have toward the sensorimotor layer.
 
-Assumes the sensorimotor base is already up (subcognitive_v2.py sub.toml). Whichever
+Assumes the sensorimotor base is already up (subcognitive.py sub_husky.toml). Whichever
 launcher grabs the monitor lock first serves the web; this one otherwise just updates.
 """
 
@@ -15,7 +15,7 @@ import argparse
 from netmon.launcher import run_launcher
 
 parser = argparse.ArgumentParser(description="RoboComp cognitive launcher + monitor v2")
-parser.add_argument("file_name", nargs="?", default="cognitive.toml", help="Path to TOML components file")
+parser.add_argument("file_name", nargs="?", default="cognitive_husky.toml", help="Path to TOML components file")
 parser.add_argument("--no-web", dest="web", action="store_false", help="Do not serve/host the web monitor")
 parser.add_argument("--web-port", type=int, default=8080)
 parser.add_argument("--web-host", default="0.0.0.0", help="Bind address for the web monitor (0.0.0.0 = all interfaces)")

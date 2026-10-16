@@ -30,6 +30,30 @@ name = "controller"
 cwd  = "~/robocomp/AiGB_UEx_Navigation/active_inference/controller"
 cmd  = "bin/controller etc/config_husky.toml"
 
+# Plants: retina's ADE20K vegetation masks -> one `plant` node (canopy disc) per plant, in the field frame.
+# residual counts their returns as explained, the controller plans around their discs, and human_concept
+# knows no person stands inside one. Needs retina (masks) and openfield_concept's `field` node.
+[[components]]
+name = "vegetation_concept"
+cwd  = "~/robocomp/AiGB_UEx_Navigation/active_inference/vegetation_concept"
+cmd  = "bin/vegetation_concept etc/config.toml"
+
+# Trunks: the ZED's ADE20K 'tree' masks in the band below the canopy, confirmed by the helios -> one trunk_*
+# `plant` node per trunk, a forbidden disc (r 0.6 m) the controller plans around. Permanent until the camera
+# verifies it gone (looking, unoccluded by foliage or people). Needs retina, openfield_concept's `field`.
+[[components]]
+name = "trunk_concept"
+cwd  = "~/robocomp/AiGB_UEx_Navigation/active_inference/trunk_concept"
+cmd  = "bin/trunk_concept etc/config.toml"
+
+# Rows: field -> trunks -> row. Trunks on a line form a row, a rectangle that grows as trunks join it; one
+# `metaconcept` node row_<id> per row with a group_member edge to each trunk. The controller marks the rows.
+# DISABLED for now (2026-10-14): without it the controller marks every trunk with its own disc. Uncomment to enable.
+# [[components]]
+# name = "row_metaconcept"
+# cwd  = "~/robocomp/AiGB_UEx_Navigation/active_inference/row_metaconcept"
+# cmd  = "bin/row_metaconcept etc/config.toml"
+
 # People (part 1 of retina in the field): ZED -> YOLO-seg + YOLO-pose -> 'masks' and 'skeleton' nodes.
 [[components]]
 name = "retina"

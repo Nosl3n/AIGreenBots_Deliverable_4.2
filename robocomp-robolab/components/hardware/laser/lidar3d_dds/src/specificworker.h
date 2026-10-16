@@ -60,6 +60,7 @@ class LidarDDSPublisher;
 
 // Robot-body self-filter (Embree). Embree headers stay behind this forward declaration.
 class MeshFilter;
+#include "mixed_pixel_filter.h"
 
 /**
  * \brief Class SpecificWorker implements the core functionality of the component.
@@ -227,6 +228,11 @@ class SpecificWorker : public GenericWorker
         // points hitting the static robot mesh; runs once in compute() before publish.
         bool mesh_filter_enabled = false;
         std::unique_ptr<MeshFilter> mesh_filter;
+
+        // Optional mixed-pixel filter (MixedPixel.enabled), run before the self-filter. See mixed_pixel_filter.h.
+        bool mixed_pixel_enabled_ = false;
+        MixedPixelFilterConfig mixed_pixel_cfg_;
+        std::uint64_t mixed_pixel_removed_ = 0;
 
     signals:
         //void customSignal();

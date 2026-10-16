@@ -65,9 +65,12 @@ public:
     // to the CAMERA (zed) frame — NOT room frame — so a consumer interacting with a person can
     // servo robot-relative (re-parent under the robot in the RT tree) without paying localization
     // noise. frame_ts_ms pins the camera-pose lookup at capture time. No-op unless poses present.
+    // `masks` (optional): this frame's YOLO-seg detections. A joint's depth is then sampled ONLY on the
+    // pixels of the matching `person` mask, so a leaf in front of a hip cannot lend the hip its range.
     void publish_skeletons(const RGBDData& rgbd,
                            const std::vector<rc::human_pose::PoseDetection>& poses,
-                           std::uint64_t frame_ts_ms = 0);
+                           std::uint64_t frame_ts_ms = 0,
+                           const std::vector<SegDetection>* masks = nullptr);
 
     // Publish the dense semantic label map on a 'semantic' node under 'zed'. `labels` is CV_8UC1 class
     // ids at the ZED IMAGE resolution (already unletterboxed), so a consumer reads
@@ -107,7 +110,8 @@ private:
                       const std::vector<BearingDetection>& bearing_detections);
     void upload_skeletons(const RGBDData& rgbd,
                           const std::vector<rc::human_pose::PoseDetection>& poses,
-                          std::uint64_t frame_ts_ms);
+                          std::uint64_t frame_ts_ms,
+                          const std::vector<SegDetection>* masks);
 
     std::shared_ptr<DSR::DSRGraph> G_;
     const RetinaParams&         params_;

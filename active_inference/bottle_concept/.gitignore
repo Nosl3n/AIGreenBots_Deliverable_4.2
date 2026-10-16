@@ -1,5 +1,0 @@
-bin/
-build/
-tests/build/
-etc/checkpoint.toml
-*.new

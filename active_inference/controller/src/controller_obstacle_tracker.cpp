@@ -1,9 +1,11 @@
 #include "../../common/world_frame/world_frame.h"   // rc::world:: — room indoors, field outdoors
+#include "../../common/vegetation/plant_discs.h"    // rc::veg:: — vegetation_concept's plants as discs
 #include "controller_obstacle_tracker.h"
 
 #include "../../common/robot_footprint/robot_footprint.h"
 
 #include <array>
+#include <set>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -852,6 +854,12 @@ ControllerPolygons ControllerObstacleTracker::read_obstacle_polygons(std::uint64
             // fallback is the one path that could still turn an abstract grouping into an obstacle.
             if (node.type() == "metaconcept")
                 continue;
+            // Plants and people have their own readers below (plant_discs.h, the person disc). They carry
+            // width_m/depth_m for residual's explainer box, and taking them here made every foliage disc an
+            // obstacle square and every trunk a second one — 128 plants x two timestamped RT queries each
+            // cost ~275 ms a cycle and held the control loop at ~3.5 Hz.
+            if (node.type() == "plant" or node.type() == "person")
+                continue;
             // ★ THE ROOM IS NOT AN OBSTACLE. The room node carries width_m/depth_m (its extent, for viewers),
             // so this width/depth sweep happily turns the entire room into one room-sized obstacle box — the
             // robot is then inside a solid object covering every cell, no target is ever footprint-feasible,
@@ -1196,6 +1204,59 @@ ControllerPolygons ControllerObstacleTracker::read_obstacle_polygons(std::uint64
             ++n_people;
         }
         report << " | people=" << n_people << " @r=" << params_->person_radius_m << "m";
+    }
+
+    // ── ROWS (row_metaconcept) and the TRUNKS not yet in one (trunk_concept) ───────────────────────────────
+    // field -> trunks -> row. What the map marks is the ROW: a rectangle (row_<id> metaconcept: centre and heading
+    // on its RT, width_m along it, depth_m across) that grows as trunks join it; the robot may not enter it. A
+    // trunk not yet in any row (fewer than 3 on a line) is still forbidden space, as its own disc, until it joins
+    // one. Only trunks and rows: vegetation_concept's foliage says what can hide things, not where to drive.
+    {
+        std::set<std::uint64_t> in_row;
+        int n_rows = 0;
+        for (const auto &row : graph_->get_nodes_by_type("metaconcept"))
+        {
+            if (not row.name().starts_with("row_"))
+                continue;
+            const float len = graph_->get_attrib_by_name<width_m_att>(row).value_or(0.f);
+            const float wid = graph_->get_attrib_by_name<depth_m_att>(row).value_or(0.f);
+            const auto M = inner_eigen_api_->get_transformation_matrix(graph_state_->room_name, row.name(), 0);
+            if (not (len > 0.f and wid > 0.f) or not M.has_value())
+                continue;
+            for (const auto &[key, edge] : row.fano())
+                if (key.second == "group_member")
+                    in_row.insert(key.first);
+            const Eigen::Vector2f c(static_cast<float>(M.value()(0, 3)), static_cast<float>(M.value()(1, 3)));
+            const Eigen::Vector2f ax(static_cast<float>(M.value()(0, 0)), static_cast<float>(M.value()(1, 0)));
+            const Eigen::Vector2f ay(-ax.y(), ax.x());
+            const ControllerPolygon rect = {c + 0.5f * len * ax + 0.5f * wid * ay, c - 0.5f * len * ax + 0.5f * wid * ay,
+                                            c - 0.5f * len * ax - 0.5f * wid * ay, c + 0.5f * len * ax - 0.5f * wid * ay};
+            obstacles.push_back(rect);
+            display_obstacle_polygons_.push_back(ControllerObstacleVisual{
+                .polygon = rect, .kind = ControllerObstacleKind::Plant, .label = row.name()});
+            ++n_rows;
+        }
+        int n_lone = 0;
+        for (const auto &trunk : rc::veg::read_plant_discs(*graph_, *inner_eigen_api_, graph_state_->room_name,
+                                                           rc::veg::kTrunkPrefix))
+        {
+            if (not in_row.empty())
+                if (const auto n = graph_->get_node(trunk.name); n.has_value() and in_row.contains(n->id()))
+                    continue;   // drawn and avoided as part of its row
+            ControllerPolygon disc;
+            constexpr int kSides = 12;
+            for (int k = 0; k < kSides; ++k)
+            {
+                const float a = 2.f * static_cast<float>(M_PI) * static_cast<float>(k) / kSides;
+                disc.emplace_back(trunk.c + trunk.r * Eigen::Vector2f(std::cos(a), std::sin(a)));
+            }
+            obstacles.push_back(disc);
+            display_obstacle_polygons_.push_back(ControllerObstacleVisual{
+                .polygon = disc, .kind = ControllerObstacleKind::Plant, .label = {}});
+            ++n_lone;
+        }
+        if (n_rows > 0 or n_lone > 0)
+            report << " | rows=" << n_rows << " lone trunks=" << n_lone;
     }
 
     // ── residual_concept OCCUPANCY GRID: TAKEN AS CELLS, NOT AS POLYGONS ─────────────────────────

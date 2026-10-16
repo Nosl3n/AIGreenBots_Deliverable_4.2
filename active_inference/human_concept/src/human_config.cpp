@@ -96,6 +96,7 @@ HumanConfig load_human_config(const ConfigLoader& cfg)
 
     out.death_frames       = geti("HumanConcept.DeathFrames", 60);
     out.death_timeout_s    = getf("HumanConcept.DeathTimeoutS", 2.0f);
+    out.birth_min_fits     = geti("HumanConcept.BirthMinFits", 3);
     out.lidar_enabled        = getb("HumanLidar.Enabled", true);
     out.lidar_band_z_min     = getf("HumanLidar.BandZMin", 1.20f);
     out.lidar_band_z_max     = getf("HumanLidar.BandZMax", 1.85f);

@@ -106,6 +106,8 @@ struct ResidualConfig
     float grid_bin_span_m           = 2.0f;
     float grid_clear_stop_max_m     = 0.10f;
     float grid_collision_band_top_m = 0.50f;
+    bool  grid_free_along_beam      = false;   // outdoor ray model: occupied where a beam returned, free where it passed
+    float grid_beam_memory_logodds  = 2.0f;    // ...its memory: |log-odds| clamp (clamp / l_miss crossings to clear)
     float grid_lidar_clearance_m    = 0.55f;   // no cell inside this radius of the robot may be cleared
     // Each device's DEAD SHELL — below this it returns nothing, so its rays carry no free evidence there.
     float helios_min_range_m = 0.40f;   // RS-Helios datasheet minimum

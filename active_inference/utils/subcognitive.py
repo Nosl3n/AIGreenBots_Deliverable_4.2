@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """RoboComp sensorimotor launcher + monitor v2.
 
-Launches the components in sub.toml, shows a rich console table, and publishes their
+Launches the components in sub_husky.toml, shows a rich console table, and publishes their
 state to the shared /tmp registry. With --web (default) it also serves the unified
 interconnection map (topology + per-connection bandwidth) if no other launcher already
-runs the monitor. Run cognitive_v2.py alongside to add the cognitive agents + DSR sphere.
+runs the monitor. Run cognitive.py alongside to add the cognitive agents + DSR sphere.
 """
 
 import argparse
@@ -12,7 +12,7 @@ import argparse
 from netmon.launcher import run_launcher
 
 parser = argparse.ArgumentParser(description="RoboComp sensorimotor launcher + monitor v2")
-parser.add_argument("file_name", nargs="?", default="sub.toml", help="Path to TOML components file")
+parser.add_argument("file_name", nargs="?", default="sub_husky.toml", help="Path to TOML components file")
 parser.add_argument("--no-web", dest="web", action="store_false", help="Do not serve/host the web monitor")
 parser.add_argument("--web-port", type=int, default=8080)
 parser.add_argument("--web-host", default="0.0.0.0", help="Bind address for the web monitor (0.0.0.0 = all interfaces)")

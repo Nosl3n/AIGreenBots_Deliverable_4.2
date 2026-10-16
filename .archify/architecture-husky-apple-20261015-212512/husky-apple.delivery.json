@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "1244fbc4-aee2-4d59-ac8d-a153a5d0426f",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/home/nosl3n/robocomp/AiGB_UEx_Navigation/.archify/architecture-husky-apple-20261015-212512/candidate.json",
+  "output": "/home/nosl3n/robocomp/AiGB_UEx_Navigation/.archify/architecture-husky-apple-20261015-212512/husky-apple.html",
+  "specification": {
+    "sha256": "6c63cffab757a0171c434bb4326d6e1abbc7dee88442b503a68bc5015ab0ec3d",
+    "bytes": 38390
+  },
+  "artifact": {
+    "sha256": "8385d7be98fbb91f3857ebc15c8c8498e13c5a8e6125378cd1473f0fde653dfc",
+    "bytes": 806882
+  }
+}

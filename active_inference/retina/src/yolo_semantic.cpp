@@ -507,13 +507,16 @@ void YoloSemanticProcessor::configure(const Config& config)
         std::println("[YoloSemantic] segmenter ready: {}", config_.model_path);
 }
 
-SemanticMap YoloSemanticProcessor::segment(const cv::Mat& rgb_frame, bool want_scores)
+SemanticMap YoloSemanticProcessor::segment(const cv::Mat& bgr_frame, bool want_scores)
 {
-    if (!segmenter_.has_value() or rgb_frame.empty()
-        or rgb_frame.cols <= 0 or rgb_frame.rows <= 0)
+    if (!segmenter_.has_value() or bgr_frame.empty()
+        or bgr_frame.cols <= 0 or bgr_frame.rows <= 0)
         return {};
 
-    last_map_ = segmenter_->segment(rgb_frame, true, want_scores);
+    // ★BGR IN, converted here. Every caller hands the frame as retina carries it (rgbd.bgr, the BGR panorama),
+    // and the model was trained on RGB. Passing it on as RGB swapped red and blue: ploughed brown soil reached
+    // the net bluish and came out `water` (93% of the ground in a husky_apple frame, 100% `earth` once swapped).
+    last_map_ = segmenter_->segment(bgr_frame, /*is_rgb=*/false, want_scores);
     return last_map_;
 }
 

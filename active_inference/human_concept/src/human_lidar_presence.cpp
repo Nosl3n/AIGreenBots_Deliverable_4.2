@@ -66,6 +66,17 @@ int HumanLidarPresence::step(std::unordered_map<std::uint64_t, HumanInstance>& i
     const auto sm = sensor_model(cfg_);
     const float r = cfg_.body_radius_m;
 
+    // Returns inside a plant are the plant's (see set_plants): drop them before anyone can claim them.
+    std::vector<Eigen::Vector3f> outside_plants;
+    if (not plants_.empty())
+    {
+        outside_plants.reserve(sweep.size());
+        for (const auto& q : sweep)
+            if (plants_.containing(Eigen::Vector2f(q.x(), q.y())) == nullptr)
+                outside_plants.push_back(q);
+    }
+    const auto& pts = plants_.empty() ? sweep : outside_plants;
+
     // Who is where, and how uncertain: the σ of the last fix (camera: stereo depth, ∝ range²; LiDAR: a few cm)
     // plus how far the person could have walked since. The follow gate is r + 2σ, capped.
     constexpr float kLidarFixSigmaM = 0.05f;
@@ -92,7 +103,7 @@ int HumanLidarPresence::step(std::unordered_map<std::uint64_t, HumanInstance>& i
 
     // Torso-band returns, each given to the NEAREST person whose gate holds it, so two workers walking side by
     // side cannot both grab the same body.
-    for (const auto& q : sweep)
+    for (const auto& q : pts)
     {
         if (q.z() < cfg_.lidar_band_z_min or q.z() > cfg_.lidar_band_z_max)
             continue;
@@ -147,7 +158,7 @@ int HumanLidarPresence::step(std::unordered_map<std::uint64_t, HumanInstance>& i
         }
 
         // Existence: carve a torso box at the (possibly re-centred) belief.
-        rc::exist::Evidence ev = rc::exist::carve_box(origin, sweep, carve_c.x(), carve_c.y(), 0.0f, 2.0f * r, 2.0f * r,
+        rc::exist::Evidence ev = rc::exist::carve_box(origin, pts, carve_c.x(), carve_c.y(), 0.0f, 2.0f * r, 2.0f * r,
                                                       cfg_.lidar_band_z_min, cfg_.lidar_band_z_max, kLidarFixSigmaM, sm);
         // carve_box's own two-outcome ΔL: a return anywhere inside the box is FOR, a beam through it AGAINST.
         // Not solid_delta: the box is a 2r square around a torso ~0.25 m deep whose centre is only known to

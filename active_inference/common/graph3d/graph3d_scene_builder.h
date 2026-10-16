@@ -53,11 +53,11 @@ public:
 		// footprint, without being a lid.
 		float floor_alpha = 0.35f;
 
-		// The robot node carries `path = "meshes/shadow.obj"` — relative to ROBOT_CONCEPT'S OWN run
+		// The robot node carries `path = "meshes/husky_a300.obj"` — relative to ROBOT_CONCEPT'S OWN run
 		// dir, the older convention, whereas every mesh_path this viewer resolves is relative to the
 		// components root. Rather than teach the renderer a special case, name the qualified path
 		// here. Empty ⇒ fall back to the synthetic Robot glyph.
-		std::string robot_mesh_path = "robot_concept/meshes/shadow.obj";
+		std::string robot_mesh_path = "robot_concept/meshes/husky_a300.obj";
 
 		// The containment ladder — robot → room → instances → meta-1 → meta-2 → … — is always drawn:
 		// it IS the view. These two are a second, orthogonal story (what can be done with a thing,

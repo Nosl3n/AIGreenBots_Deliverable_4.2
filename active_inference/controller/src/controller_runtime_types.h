@@ -25,7 +25,8 @@ enum class ControllerObstacleKind
     Object,
     Obstacle,
     Temporary,
-    GridOccupancy   // residual_concept occupancy-grid hulls: what the CONTROLLER treats as occupied space
+    GridOccupancy,  // residual_concept occupancy-grid hulls: what the CONTROLLER treats as occupied space
+    Plant           // row_metaconcept rows (rectangles) + trunk_concept trunks not yet in a row (discs)
 };
 
 struct ControllerObstacleVisual

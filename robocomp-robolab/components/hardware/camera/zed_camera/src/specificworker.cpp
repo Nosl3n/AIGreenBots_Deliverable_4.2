@@ -484,7 +484,25 @@ long SpecificWorker::build_simulated_rgbd(RoboCompCameraRGBDSimple::TRGBD &rgbd,
                                           RoboCompLidar3D::TColorCloudData &colorCloud)
 {
     // Single round-trip to the source (image + depth) instead of two separate calls.
-    RoboCompCameraRGBDSimple::TRGBD src = camerargbdsimple_proxy->getAll("");
+    // The launcher starts this component a second after the bridge, which only opens its port once
+    // Webots has handed it the robot. Uncaught, that ConnectionRefused (or a ConnectionLost when the
+    // bridge restarts) escapes into Qt's event loop and kills the process for good. Treat it as
+    // "no frame yet" and keep polling until the bridge answers.
+    RoboCompCameraRGBDSimple::TRGBD src;
+    try
+    {
+        src = camerargbdsimple_proxy->getAll("");
+    }
+    catch (const Ice::Exception &e)
+    {
+        static auto last_warn = std::chrono::steady_clock::time_point{};
+        if (const auto now = std::chrono::steady_clock::now(); now - last_warn > std::chrono::seconds(2))
+        {
+            std::cerr << "[zed_camera] waiting for CameraRGBDSimple source (bridge): " << e.ice_id() << std::endl;
+            last_warn = now;
+        }
+        return -1;
+    }
 
     // The bridge servant long-polls: it blocks for the next frame and answers with an EMPTY TRGBD
     // when none arrived inside its window. That is "nothing new", not a frame — building one out of
