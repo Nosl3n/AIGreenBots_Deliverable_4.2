@@ -45,5 +45,5 @@ add_custom_target(create_symlink ALL
   COMMAND ${CMAKE_COMMAND} -E create_symlink
     ${CMAKE_CURRENT_SOURCE_DIR}/generated/python_xbox_controller.py
     ${CMAKE_CURRENT_SOURCE_DIR}/bin/python_xbox_controller
-  COMMENT "Creando enlace simbólico en bin/"
+  COMMENT "Creating symbolic link in bin/"
   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/generated/python_xbox_controller.py )

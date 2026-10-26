@@ -191,7 +191,7 @@ class SpecificWorker : public GenericWorker
         RoboCompLidar3D::TData processLidarData(const auto &input_points);  // Abbreviated function template
         inline bool isPointOutsideCube(const Eigen::Vector3f point, const Eigen::Vector3f box_min, const Eigen::Vector3f box_max);
 
-        // Inicialización de rvec
+        // rvec initialisation
         cv::Mat rvec;
         cv::Mat tvec;
 

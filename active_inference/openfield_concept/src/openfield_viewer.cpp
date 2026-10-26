@@ -151,11 +151,11 @@ void OpenFieldMap::paintEvent(QPaintEvent *)
     int y = 18;
     const auto legend = [&](const QColor &col, const QString &txt)
     { p.fillRect(10, y - 9, 18, 4, col); p.drawText(34, y, txt); y += 16; };
-    legend(kEst, "estimada (GPS activo)");
-    legend(kNoGps, "estimada sin GPS");
-    legend(kGt, "real (Webots)");
-    legend(kGps, "fixes GPS (antena)");
-    p.drawText(10, height() - 10, QString("escala: %1 m por cuadro · rueda = zoom · norte arriba").arg(step, 0, 'f', 0));
+    legend(kEst, "estimated (GPS on)");
+    legend(kNoGps, "estimated without GPS");
+    legend(kGt, "ground truth (Webots)");
+    legend(kGps, "GPS fixes (antenna)");
+    p.drawText(10, height() - 10, QString("scale: %1 m per square · wheel = zoom · north up").arg(step, 0, 'f', 0));
 }
 
 // ── Error plot ──────────────────────────────────────────────────────────────────────────────────────
@@ -183,7 +183,7 @@ void OpenFieldErrorPlot::paintEvent(QPaintEvent *)
     const QRectF r(48, 10, width() - 58, height() - 32);
     p.setPen(QColor(180, 180, 180));
     p.drawRect(r);
-    if (samples_.size() < 2) { p.drawText(r, Qt::AlignCenter, "error de posición frente a la GT (sin datos aún)"); return; }
+    if (samples_.size() < 2) { p.drawText(r, Qt::AlignCenter, "position error against the GT (no data yet)"); return; }
 
     const double t1 = samples_.back().t, t0 = std::max(samples_.front().t, t1 - 180.0);
     double ymax = 0.05;
@@ -206,21 +206,21 @@ void OpenFieldErrorPlot::paintEvent(QPaintEvent *)
     p.drawText(QRectF(0, r.top() - 4, 46, 14), Qt::AlignRight, QString::number(ymax, 'f', 2) + " m");
     p.drawText(QRectF(0, r.bottom() - 10, 46, 14), Qt::AlignRight, "0");
     p.drawText(QRectF(r.left(), r.bottom() + 4, r.width(), 16), Qt::AlignLeft,
-               "— error real (m)    - - 2σ estimada    rojo = GPS apagado    (últimos 3 min)");
+               "— real error (m)    - - estimated 2σ    red = GPS off    (last 3 min)");
 }
 
 // ── Window ──────────────────────────────────────────────────────────────────────────────────────────
 OpenFieldViewer::OpenFieldViewer(QWidget *parent) : QWidget(parent)
 {
-    setWindowTitle("openfield_concept — localización GPS + odometría inercial");
+    setWindowTitle("openfield_concept — GPS + inertial odometry localization");
     map_ = new OpenFieldMap(this);
     plot_ = new OpenFieldErrorPlot(this);
 
-    gps_box_ = new QCheckBox("GPS (corrección de posición)", this);
+    gps_box_ = new QCheckBox("GPS (position correction)", this);
     gps_box_->setChecked(true);
-    yaw_box_ = new QCheckBox("Yaw absoluto de la IMU (corrección de rumbo)", this);
+    yaw_box_ = new QCheckBox("IMU absolute yaw (heading correction)", this);
     yaw_box_->setChecked(true);
-    clear_btn_ = new QPushButton("Borrar trayectorias", this);
+    clear_btn_ = new QPushButton("Clear trajectories", this);
     connect(gps_box_, &QCheckBox::toggled, this, &OpenFieldViewer::gpsToggled);
     connect(yaw_box_, &QCheckBox::toggled, this, &OpenFieldViewer::yawToggled);
     connect(clear_btn_, &QPushButton::clicked, this, [this] { map_->clear_traces(); plot_->clear(); });
@@ -242,11 +242,11 @@ OpenFieldViewer::OpenFieldViewer(QWidget *parent) : QWidget(parent)
     side->addWidget(gps_box_);
     side->addWidget(yaw_box_);
     side->addWidget(clear_btn_);
-    side->addWidget(group("Pose estimada (EKF)", pose_lbl_));
+    side->addWidget(group("Estimated pose (EKF)", pose_lbl_));
     side->addWidget(group("GPS", gps_lbl_));
-    side->addWidget(group("Odometría de ruedas", odom_lbl_));
+    side->addWidget(group("Wheel odometry", odom_lbl_));
     side->addWidget(group("IMU", imu_lbl_));
-    side->addWidget(group("Verdad de terreno (Webots)", gt_lbl_));
+    side->addWidget(group("Ground truth (Webots)", gt_lbl_));
     side->addStretch(1);
 
     auto *left = new QVBoxLayout;
@@ -267,12 +267,12 @@ void OpenFieldViewer::update_state(const ViewerState &s)
     plot_->push(s);
 
     if (not s.initialized)
-        banner_->setText("<b>Esperando</b> un fix GPS y el yaw de la IMU para inicializar.");
+        banner_->setText("<b>Waiting</b> for a GPS fix and the IMU yaw to initialise.");
     else if (not s.gps_enabled)
-        banner_->setText(QString("<span style='color:#c82828'><b>GPS APAGADO</b> — solo odometría%1 · %2 s</span>")
-                             .arg(s.yaw_enabled ? " + IMU" : " + giroscopio").arg(s.seconds_without_gps, 0, 'f', 1));
+        banner_->setText(QString("<span style='color:#c82828'><b>GPS OFF</b> — odometry only%1 · %2 s</span>")
+                             .arg(s.yaw_enabled ? " + IMU" : " + gyroscope").arg(s.seconds_without_gps, 0, 'f', 1));
     else
-        banner_->setText("<span style='color:#2868d0'><b>GPS + odometría + IMU</b></span>");
+        banner_->setText("<span style='color:#2868d0'><b>GPS + odometry + IMU</b></span>");
 
     const double sx = std::sqrt(s.cov(0, 0)), sy = std::sqrt(s.cov(1, 1)), st = std::sqrt(s.cov(2, 2));
     pose_lbl_->setText(s.initialized
@@ -280,26 +280,26 @@ void OpenFieldViewer::update_state(const ViewerState &s)
               .arg(fmt(s.pose(0))).arg(fmt(s.pose(1))).arg(fmt(s.pose(2))).arg(fmt(s.pose(2) * 180 / M_PI, 1))
               .arg(fmt(sx)).arg(fmt(sy)).arg(fmt(st * 180 / M_PI, 2))
         : QString("—"));
-    gps_lbl_->setText(QString("estado: <b>%1</b><br>último fix: %2<br>fixes recibidos: %3 · fusionados: %4<br>"
-                              "antigüedad: %5<br>innovación: %6 m")
-        .arg(s.gps_enabled ? "fusionando" : "<span style='color:#c82828'>ignorado</span>")
+    gps_lbl_->setText(QString("state: <b>%1</b><br>last fix: %2<br>fixes received: %3 · fused: %4<br>"
+                              "age: %5<br>innovation: %6 m")
+        .arg(s.gps_enabled ? "fusing" : "<span style='color:#c82828'>ignored</span>")
         .arg(s.gps_fix ? QString("(%1, %2) m").arg(fmt(s.gps_fix->x())).arg(fmt(s.gps_fix->y())) : QString("—"))
         .arg(s.gps_fixes).arg(s.gps_fused)
         .arg(s.gps_age_s >= 0 ? fmt(s.gps_age_s, 2) + " s" : QString("—"))
         .arg(fmt(s.gps_innovation_m)));
-    odom_lbl_->setText(QString("avance = %1 m/s<br>lateral = %2 m/s<br>giro (ruedas) = %3 rad/s")
+    odom_lbl_->setText(QString("forward = %1 m/s<br>lateral = %2 m/s<br>turn (wheels) = %3 rad/s")
         .arg(fmt(s.adv)).arg(fmt(s.side)).arg(fmt(s.wheel_rot)));
-    imu_lbl_->setText(QString("giroscopio z = %1 rad/s<br>yaw = %2<br>yaw absoluto: <b>%3</b><br>antigüedad: %4 ms")
+    imu_lbl_->setText(QString("gyroscope z = %1 rad/s<br>yaw = %2<br>absolute yaw: <b>%3</b><br>age: %4 ms")
         .arg(fmt(s.gyro_z))
         .arg(s.imu_yaw ? QString("%1 rad (%2°)").arg(fmt(*s.imu_yaw)).arg(fmt(*s.imu_yaw * 180 / M_PI, 1)) : QString("—"))
-        .arg(s.yaw_enabled ? "fusionando" : "<span style='color:#c82828'>ignorado (solo giroscopio)</span>")
+        .arg(s.yaw_enabled ? "fusing" : "<span style='color:#c82828'>ignored (gyroscope only)</span>")
         .arg(s.imu_age_ms >= 0 ? fmt(s.imu_age_ms, 0) : QString("—")));
     gt_lbl_->setText(s.gt
-        ? QString("x = %1 · y = %2 m<br>θ = %3°<br><b>error de posición = %4 m</b><br><b>error de rumbo = %5°</b>")
+        ? QString("x = %1 · y = %2 m<br>θ = %3°<br><b>position error = %4 m</b><br><b>heading error = %5°</b>")
               .arg(fmt(s.gt->x())).arg(fmt(s.gt->y())).arg(fmt((*s.gt)(2) * 180 / M_PI, 1))
               .arg(s.err_xy ? fmt(*s.err_xy) : QString("—"))
               .arg(s.err_theta ? fmt(*s.err_theta * 180 / M_PI, 2) : QString("—"))
-        : QString("no disponible (solo en simulación)"));
+        : QString("not available (simulation only)"));
 }
 
 } // namespace rc::openfield

@@ -189,7 +189,7 @@ void SpecificWorker::initialize()
             robotTranslationField = robotNode->getField("translation");
         }
 
-        // Inicializa los motores y los sensores de posición.
+        // Initialise the motors and the position sensors.
         // Mecanum order is {wheel2, wheel1, wheel4, wheel3} -- it is what the IK below is written
         // against, not alphabetical, so do not "tidy" it. Differential is {left, right}, matching
         // ShadowDiff.proto and the sign convention in the forward kinematics.
@@ -202,7 +202,7 @@ void SpecificWorker::initialize()
                                                                                    : mecanumMotorNames;
         //const char *sensorNames[4] = {"wheel1sensor", "wheel2sensor", "wheel3sensor", "wheel4sensor"};
 
-        // Inicializa los sensores soportados.
+        // Initialise the supported sensors.
         lidar_helios = robot->getLidar("helios");
         lidar_pearl = robot->getLidar("bpearl");
         camera = robot->getCamera("camera");
@@ -219,7 +219,7 @@ void SpecificWorker::initialize()
         inertial_unit_ = dynamic_cast<webots::InertialUnit*>(robot->getDevice("inertial unit"));
         compass_       = dynamic_cast<webots::Compass*>(robot->getDevice("compass"));
 
-        // Activa los componentes en la simulación si los detecta.
+        // Enable the components found in the simulation.
         // Heavy sensors run at sensor_period; the IMU and wheel encoders are cheap and
         // feed the control loop, so they stay at the step rate.
         if(lidar_helios) lidar_helios->enable(sensor_period);
@@ -242,7 +242,7 @@ void SpecificWorker::initialize()
             }
             ps[i] = motors[i]->getPositionSensor();
             if (ps[i]) ps[i]->enable(compute_period);
-            motors[i]->setPosition(INFINITY); // Modo de velocidad.
+            motors[i]->setPosition(INFINITY); // Velocity mode.
             motors[i]->setVelocity(0);
         }
         if(accelerometer) accelerometer->enable(compute_period);
@@ -387,7 +387,7 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
     double cfov = _camera->getFov(); // radianes
     double cfx = width / (2.0 * tan(cfov / 2.0));
     double cfy = cfx; // square pixel assumption //height / (2.0 * tan(cfov / 2.0));
-    new_zed_image.image.focalx = cfx;    //TODO: cambiar el tipo en el IDSL
+    new_zed_image.image.focalx = cfx;    //TODO: change the type in the IDSL
     new_zed_image.image.focaly = cfy;
     new_zed_image.image.width = new_zed_image.depth.width = width;
     new_zed_image.image.height = new_zed_image.depth.height = height;
@@ -408,11 +408,11 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
     std::memcpy(new_zed_image.image.image.data(), imageMatRGB.data, new_zed_image.image.image.size());
     // TODO: check if this can be done with move_iterator
 
-    // -------------------- Imagen de profundidad --------------------
+    // -------------------- Depth image --------------------
     double fov = _rangeFinder->getFov(); // radianes
     double fx = width / (2.0 * tan(fov / 2.0));
     double fy = fx;
-    new_zed_image.depth.focalx = fx;    //TODO: cambiar el tipo en el IDSL
+    new_zed_image.depth.focalx = fx;    //TODO: change the type in the IDSL
     new_zed_image.depth.focaly = fy;
     new_zed_image.depth.width = _rangeFinder->getWidth();
     new_zed_image.depth.height = _rangeFinder->getHeight();
@@ -459,7 +459,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
 {
     RoboCompCamera360RGB::TImage newImage360;
 
-    // Aseguramos de que ambas cámaras tienen la misma resolución, de lo contrario, deberás manejar las diferencias.
+    // Both cameras must have the same resolution; otherwise the difference has to be handled.
     if (_camera1->getWidth() != _camera2->getWidth() || _camera1->getHeight() != _camera2->getHeight())
     {
         std::cerr << "Error: Cameras with different resolutions." << std::endl;
@@ -471,7 +471,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     const double cam360_sim_now_ms = robot != nullptr ? robot->getTime() * 1000.0 : 0.0;
     newImage360.timestamp = acquisition_wall_ms(timestamp, cam360_sim_now_ms, sensor_period);
 
-    // La resolución de la nueva imagen será el doble en el ancho ya que estamos combinando las dos imágenes.
+    // The new image is twice as wide, since it joins the two images.
     newImage360.width = 2 * _camera1->getWidth();
     newImage360.height = _camera1->getHeight();
     newImage360.depth = 3; // assuming color images
@@ -502,7 +502,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     img_1.copyTo(img_final(cv::Rect(shift, 0, w, _camera1->getHeight())));
     img_2(cv::Rect(0, 0, w - shift, _camera2->getHeight())).copyTo(img_final(cv::Rect(shift + w, 0, w - shift, _camera1->getHeight())));
 
-    // Asignar la imagen RGB 360 al tipo TImage de Robocomp
+    // Assign the 360 RGB image to RoboComp's TImage type
     newImage360.image.resize(img_final.total()*img_final.elemSize());
     memcpy(&newImage360.image[0], img_final.data, img_final.total()*img_final.elemSize());
 
@@ -512,7 +512,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     if(pars.delay)
         camera_queue.push(newImage360);
 
-    // Asignamos el resultado final al atributo de clase (si tienes uno).
+    // Store the final result in the class attribute (if there is one).
     double_buffer_360.put(std::move(newImage360));
 
     //std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
@@ -854,17 +854,17 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
 
     RoboCompFullPoseEstimation::FullPoseEuler pose_data;
 
-    // Posición
+    // Position
     pose_data.x = static_cast<float>(shadow_position[0]);  // metros → mm
     pose_data.y = static_cast<float>(shadow_position[1]);
     pose_data.z = static_cast<float>(shadow_position[2]);
 
-    // Orientación (Euler en radianes) 2D
+    // Orientation (Euler, radians) 2D
     pose_data.rx = 0.0;
     pose_data.ry = 0.0;
-    pose_data.rz = orientation;  // Ángulo Z ya calculado
+    pose_data.rz = orientation;  // Z angle, already computed
 
-    // Velocidades en world frame
+    // Velocities in the world frame
     pose_data.vx = -velocity_local(0);
     pose_data.vy = -velocity_local(1);
     pose_data.vz = 0;
@@ -872,7 +872,7 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     pose_data.vry = 0;
     pose_data.vrz = static_cast<float>(rot_velocity);
 
-    // Velocidades en robot frame
+    // Velocities in the robot frame
     pose_data.adv = velocity_local(1);  //y
     pose_data.side = -velocity_local(0);
     pose_data.rot = static_cast<float>(rot_velocity); // per WALL second, see sim_wall_rate_
@@ -1233,8 +1233,8 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
             //distance meters to millimeters
             const float distance = rangeImage[index]; //Meters
 
-            point.phi = h_angle[i];// ángulo horizontal // -x para hacer [PI, -PI] y no [-PI, PI]
-            point.theta = v_angle[j];// ángulo vertical
+            point.phi = h_angle[i];// horizontal angle // -x to get [PI, -PI] instead of [-PI, PI]
+            point.theta = v_angle[j];// vertical angle
 
             //Calculate Cartesian co-ordinates and rectify axis positions
             Eigen::Vector3f lidar_point(
@@ -1263,7 +1263,7 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
                         point.y = lidar_point.y();
                         point.z = lidar_point.z();
 
-                        point.distance2d = std::hypot(lidar_point.x(),lidar_point.y());  // distancia en el plano xy
+                        point.distance2d = std::hypot(lidar_point.x(),lidar_point.y());  // distance in the xy plane
 
                         newLidar3dData.points.push_back(point);
                         newLaserData.push_back(RoboCompLaser::TData{.angle=point.phi, .dist = point.distance2d});
@@ -1287,7 +1287,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, long times
 {
     RoboCompCameraRGBDSimple::TImage newImage{};
 
-    // Se establece el periodo de refresco de la imagen en milisegundos.
+    // Set the image refresh period in milliseconds.
 //    newImage.period = getPeriod("Compute");
     newImage.period = fps.get_period();
 
@@ -1297,7 +1297,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, long times
 //    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
     newImage.alivetime = timestamp;
 
-    // Obtener la resolución de la imagen.
+    // Get the image resolution.
     newImage.width = _camera->getWidth();
     newImage.height = _camera->getHeight();
     newImage.depth = 3;  // assuming color images
@@ -1311,38 +1311,38 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, long times
     std::memcpy(newImage.image.data(), imageMatBGR.data, newImage.image.size());
     newImage.compressed = false;
 
-    // Asignamos el resultado final al atributo de clase
+    // Store the final result in the class attribute
     this->cameraImage = newImage;
 }
 // void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder, long timestamp)
 // {
 //     RoboCompCameraRGBDSimple::TDepth newDepthImage{};
 //
-//     // Se establece el periodo de refresco de la imagen en milisegundos.
+//     // Set the image refresh period in milliseconds.
 //     newDepthImage.period = fps.get_period();
 //
-//     // Obtener la resolución de la imagen de profundidad.
+//     // Get the depth image resolution.
 //     newDepthImage.width = _rangeFinder->getWidth();
 //     newDepthImage.height = _rangeFinder->getHeight();
 //     newDepthImage.depthFactor = 1;
 //     newDepthImage.compressed = false;
 //
-//     // Obtener la imagen de profundidad
+//     // Get the depth image
 //     const float* webotsDepthData = _rangeFinder->getRangeImage();
 //
-//     // Accedemos a cada depth value y le aplicamos un factor de escala.
+//     // Apply a scale factor to each depth value.
 //     const int imageElementCount = newDepthImage.width * newDepthImage.height;
 //     newDepthImage.depth.resize(static_cast<size_t>(imageElementCount) * sizeof(float));
 //
 //     unsigned char* out = newDepthImage.depth.data();
 //     for (int i = 0; i < imageElementCount; i++)
 //     {
-//         // Este es el factor de escala a aplicar.
+//         // The scale factor to apply.
 //         float scaledValue = webotsDepthData[i] * 10;
 //         std::memcpy(out + static_cast<size_t>(i) * sizeof(float), &scaledValue, sizeof(float));
 //     }
 //
-//     // Asignamos el resultado final al atributo de clase
+//     // Store the final result in the class attribute
 //     this->depthImage = newDepthImage;
 // }
 
@@ -1808,15 +1808,15 @@ RoboCompWebots2Robocomp::Quaternion axisAngleToQuaternion(const webots::Field &r
     double rz = rotation.getSFRotation()[2];
     const double angle = rotation.getSFRotation()[3];
 
-    // Aseguramos que el eje esté normalizado (por seguridad)
-    // En Webots generalmente ya viene normalizado, pero esto evita errores.
+    // Make sure the axis is normalised (for safety)
+    // Webots usually gives it normalised already, but this avoids errors.
     if (const double norm = std::sqrt(rx*rx + ry*ry + rz*rz); norm > 0) {
         rx /= norm;
         ry /= norm;
         rz /= norm;
     }
 
-    // Fórmulas de ángulo medio
+    // Half-angle formulas
     const double halfAngle = angle * 0.5;
     const double sinHalf = std::sin(halfAngle);
 

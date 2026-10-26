@@ -260,7 +260,7 @@ void SpecificWorker::initialize()
     if (not simulator)
     {
         param.input_type = robosense::lidar::InputType::ONLINE_LIDAR;
-        param.input_param.host_address = dest_pc_ip_addr; // ip del pc que va a recibir los datos. El lidar se encuentra en la 192.168.1.200 (tiene api rest)
+        param.input_param.host_address = dest_pc_ip_addr; // IP of the PC that receives the data. The LiDAR is at 192.168.1.200 (it has a REST API)
         //param.input_param.group_address = "192.168.50.111";
         param.input_param.msop_port = msop_port;   ///< Set the lidar msop port number, the default is 6699
         param.input_param.difop_port = difop_port;  ///< Set the lidar difop port number, the default is 7788

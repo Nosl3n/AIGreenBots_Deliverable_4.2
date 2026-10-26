@@ -3,13 +3,13 @@
 
     python3 gen_worlds.py
 
-  exp_personas.wbt    (E2) the orchard with four workers instead of two, on purpose-built paths (robot route: the
+  exp_people.wbt      (E2) the orchard with four workers instead of two, on purpose-built paths (robot route: the
                       x = -1.25 corridor and the south headland, twice):
-                        PERSONA_CRUCE_A / _B  walk the south headland (y -8.4 / -7.9) in OPPOSITE directions: they cross
+                        PERSON_CROSS_A / _B  walk the south headland (y -8.4 / -7.9) in OPPOSITE directions: they cross
                                               each other in front of the robot
-                        PERSONA_VEG           walks the x = 1.25 corridor: seen from x = -1.25 through the x = 0 row, hidden
+                        PERSON_VEG            walks the x = 1.25 corridor: seen from x = -1.25 through the x = 0 row, hidden
                                               by its canopies
-                        PERSONA_DETRAS        walks the robot's own corridor (x = -1.7) northwards, behind it
+                        PERSON_BEHIND         walks the robot's own corridor (x = -1.7) northwards, behind it
 
 The source world is never modified. PROTO paths are rewritten so the copy works from experiments/worlds/.
 Ground truth for the analysis is read back from this file (common.world_trees / world_humans).
@@ -55,12 +55,12 @@ def main():
     marker = "# ---- APPLE_ROWS BEGIN"
     people = (
         "# ---- E2 WORKERS (experiments/scripts/gen_worlds.py) ----\n"
-        + pedestrian("PERSONA_CRUCE_A", (-4.0, -8.4), "-4 -8.4, 4 -8.4", 0.5, "0.85 0.45 0.1", "cruce a")
-        + pedestrian("PERSONA_CRUCE_B", (4.0, -7.9), "4 -7.9, -4 -7.9", 0.45, "0.1 0.6 0.3", "cruce b")
-        + pedestrian("PERSONA_VEG", (1.25, 6.0), "1.25 6, 1.25 -6", 0.45, "0.2 0.35 0.75", "tras vegetacion")
-        + pedestrian("PERSONA_DETRAS", (-1.7, -9.0), "-1.7 -9, -1.7 7", 0.35, "0.7 0.1 0.1", "detras")
+        + pedestrian("PERSON_CROSS_A", (-4.0, -8.4), "-4 -8.4, 4 -8.4", 0.5, "0.85 0.45 0.1", "crossing a")
+        + pedestrian("PERSON_CROSS_B", (4.0, -7.9), "4 -7.9, -4 -7.9", 0.45, "0.1 0.6 0.3", "crossing b")
+        + pedestrian("PERSON_VEG", (1.25, 6.0), "1.25 6, 1.25 -6", 0.45, "0.2 0.35 0.75", "behind vegetation")
+        + pedestrian("PERSON_BEHIND", (-1.7, -9.0), "-1.7 -9, -1.7 7", 0.35, "0.7 0.1 0.1", "behind")
     )
-    out = common.EXP_WORLDS / "exp_personas.wbt"
+    out = common.EXP_WORLDS / "exp_people.wbt"
     out.write_text(t.replace(marker, people + marker, 1))
     print(out)
 

@@ -44,7 +44,7 @@ public:
         return i_deque.size();
     }
 
-    // Método para obtener el elemento frontal de la cola
+    // Returns the element at the front of the queue
     T front() const
     {
         if (!i_deque.empty()) {
@@ -72,13 +72,13 @@ public:
         throw std::runtime_error("Empty queue.");
     }
 
-    // Método para acceder a un elemento en una posición específica
+    // Accesses the element at a given position
     T at(size_t index) const
     {
         if (index < i_deque.size()) {
             return i_deque.at(index);
         }
-        throw std::out_of_range("Índice fuera de rango.");
+        throw std::out_of_range("Index out of range.");
     }
 
     std::deque <T> get_queue(){

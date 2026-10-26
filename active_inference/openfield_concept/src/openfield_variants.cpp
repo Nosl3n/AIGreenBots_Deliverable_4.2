@@ -70,12 +70,12 @@ std::optional<std::pair<Eigen::Vector3d, Eigen::Matrix3d>> Shadow::at(std::int64
 std::vector<Shadow> make_shadows(const EkfParams &p, double nu)
 {
     std::vector<Shadow> s(4);
-    s[0].name = "A_actual";
-    s[1].name = "B_receptor";
+    s[0].name = "A_current";
+    s[1].name = "B_receiver";
     s[1].gps = {.receiver_sigma = true, .student = true, .nu = nu, .lag_comp = true};
-    s[2].name = "C_sin_gnss";
+    s[2].name = "C_no_gnss";
     s[2].use_gps = false;
-    s[3].name = "D_sin_yaw";
+    s[3].name = "D_no_yaw";
     s[3].use_yaw = false;
     for (auto &f : s) f.ekf.set_params(p);
     return s;

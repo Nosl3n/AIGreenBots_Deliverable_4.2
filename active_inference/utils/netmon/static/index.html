@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>RoboComp — Mapa de interconexión</title>
+  <title>RoboComp — interconnection map</title>
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
   <style>
     html, body { margin: 0; height: 100%; background: #14161a; color: #e6e6e6;
@@ -73,7 +73,7 @@
                    background: rgba(61, 22, 24, .82); color: #ffb3ae; }
     #liveOverlay.hidden { display: none; }
 
-    /* ── web joystick (control remoto real del robot) ────────────────────── */
+    /* ── web joystick (real remote control of the robot) ────────────────────── */
     #joy { position: fixed; left: 16px; bottom: 16px; width: 280px; background: #0d0f13;
            border: 1px solid #2c313c; border-radius: 8px; z-index: 26;
            box-shadow: 0 4px 18px rgba(0,0,0,.5); user-select: none; }
@@ -132,45 +132,45 @@
 </head>
 <body>
   <div id="bar">
-    <span><b>🧠 RoboComp</b> interconexión</span>
+    <span><b>🧠 RoboComp</b> interconnection</span>
     <span><span class="dot" style="background:#3fb950"></span>alive
           <span class="dot" style="background:#d6b528;margin-left:8px"></span>up (ICE ✗)
-          <span class="dot" style="background:#f85149;margin-left:8px"></span>parado
+          <span class="dot" style="background:#f85149;margin-left:8px"></span>stopped
           <span class="dot" style="background:#b072e0;margin-left:8px"></span>broker
           <span class="dot" style="background:#2ec5d3;margin-left:8px"></span>DSR</span>
     <span style="color:#8a94a2">— RPC · <span style="color:#b072e0">- - pub/sub</span> · <span style="color:#e0952b">- - DDS</span> · <span style="color:#2ec5d3">DSR</span></span>
     <span id="bw" class="pill">bw…</span>
-    <span id="battery" class="pill" title="batería (Victron VE.Direct)" style="display:none"></span>
-    <span style="color:#8a94a2">capas:</span>
-    <button id="toggleRpc" class="btn" title="mostrar/ocultar aristas RPC (ICE)">RPC</button>
-    <button id="toggleIcestorm" class="btn" title="mostrar/ocultar pub/sub IceStorm">IceStorm</button>
-    <button id="toggleDds" class="btn" title="mostrar/ocultar publicaciones DDS">DDS</button>
+    <span id="battery" class="pill" title="battery (Victron VE.Direct)" style="display:none"></span>
+    <span style="color:#8a94a2">layers:</span>
+    <button id="toggleRpc" class="btn" title="show/hide RPC (ICE) edges">RPC</button>
+    <button id="toggleIcestorm" class="btn" title="show/hide IceStorm pub/sub">IceStorm</button>
+    <button id="toggleDds" class="btn" title="show/hide DDS publications">DDS</button>
     <span id="sel" class="hidden">
       <b id="selname"></b>
-      <button class="btn" id="selStart" title="arrancar si está parado">▶ launch</button>
-      <button class="btn" id="selRestart" title="reiniciar">🔄 relaunch</button>
-      <button class="btn" id="selStop" title="parar">🛑 stop</button>
-      <button class="btn" id="selBuild" title="cbuild (cmake -B build && make -C build -j32) en su directorio">🔨 build</button>
-      <button class="btn" id="selTty" title="terminal real (tmux) — interactiva">🖥 tty</button>
-      <button class="btn" id="selWindow" title="ver + interactuar con la ventana X11 del componente (VNC)">🪟 ventana</button>
-      <button class="btn" id="selConfig" title="editar archivo de configuración">⚙ config</button>
+      <button class="btn" id="selStart" title="start if stopped">▶ launch</button>
+      <button class="btn" id="selRestart" title="restart">🔄 relaunch</button>
+      <button class="btn" id="selStop" title="stop">🛑 stop</button>
+      <button class="btn" id="selBuild" title="cbuild (cmake -B build && make -C build -j8) in its folder">🔨 build</button>
+      <button class="btn" id="selTty" title="real terminal (tmux) — interactive">🖥 tty</button>
+      <button class="btn" id="selWindow" title="view + interact with the component's X11 window (VNC)">🪟 window</button>
+      <button class="btn" id="selConfig" title="edit config file">⚙ config</button>
     </span>
-    <button id="joyBtn" class="btn" style="margin-left:auto" title="control remoto del robot">🕹 Joystick</button>
+    <button id="joyBtn" class="btn" style="margin-left:auto" title="robot remote control">🕹 Joystick</button>
     <button id="liveBtn" class="btn">🎥 Live view</button>
-    <button id="layoutBtn" class="btn">Vista: Orgánico por nivel</button>
-    <button id="fitBtn" class="btn">Reorganizar</button>
-    <button id="tableBtn" class="btn">Tabla</button>
+    <button id="layoutBtn" class="btn">View: Organic by level</button>
+    <button id="fitBtn" class="btn">Re-layout</button>
+    <button id="tableBtn" class="btn">Table</button>
     <span style="color:#6b7280" id="ts"></span>
   </div>
   <div id="main">
     <div id="graph"></div>
-    <div id="resizer" title="arrastra para redimensionar"></div>
+    <div id="resizer" title="drag to resize"></div>
     <div id="panel">
       <table>
-        <thead><tr><th>Componente</th><th>Capa</th><th>Estado</th><th class="num">CPU</th><th class="num">Mem</th></tr></thead>
+        <thead><tr><th>Component</th><th>Layer</th><th>State</th><th class="num">CPU</th><th class="num">Mem</th></tr></thead>
         <tbody id="tbody"></tbody>
       </table>
-      <table style="margin-top:10px" title="fps/drops(frame_id)/lost(RTPS)/latencia por stream de vídeo — media_transport StreamStats. fps=media de la ventana de 5s, min fps=peor instante dentro de esa ventana (detecta caídas breves que la media esconde). lat/max lat: latencia captura→recepción.">
+      <table style="margin-top:10px" title="fps/drops(frame_id)/lost(RTPS)/latency per video stream — media_transport StreamStats. fps=mean over the 5 s window, min fps=worst instant inside that window (catches short drops the mean hides). lat/max lat: capture→reception latency.">
         <thead><tr><th>Media stream</th><th class="num">fps</th><th class="num">min fps</th><th class="num">drops</th><th class="num">lost</th><th class="num">lat ms</th><th class="num">max lat</th></tr></thead>
         <tbody id="mediaTbody"></tbody>
       </table>
@@ -180,17 +180,17 @@
     <div id="cfghead">
       <b id="cfgtitle">config</b>
       <span id="cfgpath"></span>
-      <button class="btn" id="cfgSave" style="margin-left:auto">💾 guardar</button>
-      <button class="btn" id="cfgClose">✕ cerrar</button>
+      <button class="btn" id="cfgSave" style="margin-left:auto">💾 save</button>
+      <button class="btn" id="cfgClose">✕ close</button>
     </div>
     <textarea id="cfgtext" spellcheck="false"></textarea>
   </div>
   <div id="winview" class="hidden">
     <div id="winviewhead">
-      <b id="winviewtitle">ventana</b>
-      <select id="winviewPicker" class="hidden" title="este componente tiene varias ventanas"></select>
+      <b id="winviewtitle">window</b>
+      <select id="winviewPicker" class="hidden" title="this component has several windows"></select>
       <span id="winviewstatus"></span>
-      <button class="btn" id="winviewClose" style="margin-left:auto">✕ cerrar</button>
+      <button class="btn" id="winviewClose" style="margin-left:auto">✕ close</button>
     </div>
     <div id="winviewbody"></div>
   </div>
@@ -200,12 +200,12 @@
       <span id="ttystatus"></span>
       <button class="btn" id="ttyCtrlC" title="Ctrl-C">^C</button>
       <button class="btn" id="ttyCtrlD" title="Ctrl-D">^D</button>
-      <button class="btn" id="ttyClose" style="margin-left:auto">✕ cerrar</button>
+      <button class="btn" id="ttyClose" style="margin-left:auto">✕ close</button>
     </div>
     <pre id="ttyscreen"></pre>
     <div id="ttyinput">
       <input id="ttyline" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
-             placeholder="escribe…">
+             placeholder="type…">
     </div>
   </div>
   <div id="joy" class="hidden">
@@ -214,12 +214,12 @@
       <button class="btn" id="joyClose" style="margin-left:auto">✕</button>
     </div>
     <div id="joybody">
-      <button id="joyArmBtn" class="disarmed">🔓 DESARMADO — pulsa para armar</button>
-      <div id="joypad" title="vertical: avance · horizontal: girar"><div id="joyknob"></div></div>
+      <button id="joyArmBtn" class="disarmed">🔓 DISARMED — press to arm</button>
+      <div id="joypad" title="vertical: forward · horizontal: turn"><div id="joyknob"></div></div>
       <div id="joyrotwrap">lateral
         <div id="joyrot"><div id="joyrotknob"></div></div>
       </div>
-      <button id="joyStopBtn">🛑 STOP (corta motores)</button>
+      <button id="joyStopBtn">🛑 STOP (cuts motors)</button>
       <div id="joystatus">—</div>
     </div>
   </div>
@@ -227,7 +227,7 @@
     <div id="livehead">
       <b>🎥 live view</b>
       <input id="liveUrl" type="text" placeholder="http://host:8889/theta (mediamtx WHEP)">
-      <button class="btn" id="liveLoad">Cargar</button>
+      <button class="btn" id="liveLoad">Load</button>
       <button class="btn" id="liveClose">✕</button>
     </div>
     <div id="liveBody">

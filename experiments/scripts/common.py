@@ -17,8 +17,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 EXP = REPO / "experiments"
-RESULTS = EXP / "resultados"
-IMAGES = EXP / "imagenes"
+RESULTS = EXP / "results"
+IMAGES = EXP / "images"
 WORLDS_DIR = REPO / "webots-agri" / "worlds"
 EXP_WORLDS = EXP / "worlds"
 UTILS = REPO / "active_inference" / "utils"
@@ -301,10 +301,10 @@ def wait_for_bridge(timeout_s: float = 60.0) -> bool:
 
 # ── Ground truth stored in the worlds ─────────────────────────────────────────────────────────────────────────
 def world_trees(world: Path) -> list[dict]:
-    """Every tree DEF in a .wbt (AppleTree / YoungPalm): its DEF, (x, y) and, when present, the canopy fields."""
+    """Every tree DEF in a .wbt (AppleTree): its DEF, (x, y) and, when present, the canopy fields."""
     text = world.read_text()
     out = []
-    for m in re.finditer(r"DEF (\S+) (AppleTree|YoungPalm) \{(.*?)\n\}", text, re.S):
+    for m in re.finditer(r"DEF (\S+) (AppleTree) \{(.*?)\n\}", text, re.S):
         body = m.group(3)
         t = re.search(r"translation\s+(\S+)\s+(\S+)\s+(\S+)", body)
         rec = {"def": m.group(1), "type": m.group(2), "x": float(t.group(1)), "y": float(t.group(2))}

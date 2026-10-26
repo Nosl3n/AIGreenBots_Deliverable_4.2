@@ -63,7 +63,7 @@ const OPTIONS = {
 };
 
 const MODES = ["level", "hier", "free"];
-const MODE_LABEL = { level: "Orgánico por nivel", hier: "Jerárquico", free: "Orgánico libre" };
+const MODE_LABEL = { level: "Organic by level", hier: "Hierarchical", free: "Free organic" };
 let layoutMode = "level";   // default view
 
 // which edge groups are shown; toggled from the toolbar, persists across topology rebuilds
@@ -93,7 +93,7 @@ function applyLayout(mode) {
   }
   network.stabilize();   // then the stabilization listener freezes physics again
   const btn = document.getElementById("layoutBtn");
-  if (btn) btn.textContent = "Vista: " + MODE_LABEL[mode];
+  if (btn) btn.textContent = "View: " + MODE_LABEL[mode];
 }
 
 function cycleLayout() {
@@ -152,7 +152,7 @@ function nodeTooltip(n) {
   if (n.subscribes && n.subscribes.length) L.push("suscribe: " + n.subscribes.join(", "));
   if (n.dds && n.dds.domain !== undefined)
     L.push(`DDS: dominio ${n.dds.domain}, topics ${(n.dds.topics || []).join(", ") || "?"}`);
-  return `${n.id}\n${L.join("\n") || "(sin interfaces ICE)"}`;
+  return `${n.id}\n${L.join("\n") || "(no ICE interfaces)"}`;
 }
 
 let network, nodes, edges;
@@ -395,10 +395,10 @@ async function sendAction(action, name) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, name }),
     })).json();
-    if (!r.ok) { toast("Error: " + (r.error || "acción rechazada"), true); return; }
+    if (!r.ok) { toast("Error: " + (r.error || "action rejected"), true); return; }
     toast(`${action} → ${name}`);
     burstPoll();
-  } catch { toast("No se pudo enviar la acción", true); }
+  } catch { toast("Could not send the action", true); }
 }
 
 // disables a button for a short cooldown after click, so a slow action (build, restart)
@@ -420,13 +420,13 @@ async function openConfig(name) {
   cfgPath = cfgOriginal = null;
   document.getElementById("cfgtitle").textContent = "config · " + name;
   document.getElementById("cfgpath").textContent = "";
-  document.getElementById("cfgtext").value = "cargando...";
+  document.getElementById("cfgtext").value = "loading...";
   document.getElementById("cfg").classList.remove("hidden");
   try {
     const r = await (await fetch(`/api/config?name=${encodeURIComponent(name)}`)).json();
     if (!r.ok) {
       document.getElementById("cfgtext").value = "";
-      document.getElementById("cfgpath").textContent = r.error || "sin archivo de configuración";
+      document.getElementById("cfgpath").textContent = r.error || "no config file";
       return;
     }
     cfgPath = r.path; cfgOriginal = r.text;
@@ -442,17 +442,17 @@ async function saveConfig() {
   if (!cfgName || !cfgPath) return;
   const text = document.getElementById("cfgtext").value;
   if (text === cfgOriginal) return;
-  if (!confirm(`¿Guardar cambios en ${cfgPath}?\nSe guarda una copia .bak del contenido anterior. `
-              + `El componente en marcha no recarga solo — usa 🔄 relaunch después.`)) return;
+  if (!confirm(`Save changes to ${cfgPath}?\nA .bak copy of the previous content is kept. `
+              + `The running component does not reload by itself — use 🔄 relaunch afterwards.`)) return;
   try {
     const r = await (await fetch("/api/config", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: cfgName, text }),
     })).json();
-    if (!r.ok) { toast("Error al guardar: " + (r.error || "desconocido"), true); return; }
+    if (!r.ok) { toast("Error saving: " + (r.error || "unknown"), true); return; }
     cfgOriginal = text;
     toast(`config guardada · ${cfgName}`);
-  } catch { toast("No se pudo guardar (red)", true); }
+  } catch { toast("Could not save (network)", true); }
 }
 
 // --- real terminal (tmux-backed, see netmon/term_tmux.py) ---------------------
@@ -509,7 +509,7 @@ function openTty(name) {
   ttyName = name;
   document.getElementById("ttytitle").textContent = "tty · " + name;
   document.getElementById("ttystatus").textContent = "";
-  document.getElementById("ttyscreen").textContent = "cargando…";
+  document.getElementById("ttyscreen").textContent = "loading…";
   document.getElementById("tty").classList.remove("hidden");
   document.getElementById("ttyline").value = "";
   document.getElementById("ttyline").focus();
@@ -530,7 +530,7 @@ async function refreshTty() {
     const r = await (await fetch(`/api/term/snapshot?name=${encodeURIComponent(ttyName)}&lines=2000`)).json();
     const status = document.getElementById("ttystatus");
     if (!r.ok) { status.textContent = "error: " + (r.error || "?"); return; }
-    status.textContent = r.alive ? "" : "(sin sesión — arranca/relanza el componente)";
+    status.textContent = r.alive ? "" : "(no session — start/relaunch the component)";
     const pre = document.getElementById("ttyscreen");
     const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 30;
     pre.innerHTML = ansiToHtml(r.text || "");
@@ -547,7 +547,7 @@ async function ttySendKey(key) {
     })).json();
     if (!r.ok) toast("Error: " + (r.error || key), true);
     refreshTty();
-  } catch { toast("No se pudo enviar a la terminal", true); }
+  } catch { toast("Could not send to the terminal", true); }
 }
 
 async function ttySendChar(ch) {
@@ -559,7 +559,7 @@ async function ttySendChar(ch) {
     })).json();
     if (!r.ok) toast("Error: " + (r.error || ch), true);
     refreshTty();
-  } catch { toast("No se pudo enviar a la terminal", true); }
+  } catch { toast("Could not send to the terminal", true); }
 }
 
 // Real per-keystroke forwarding -- no local line buffer. #ttyline's own value never
@@ -633,13 +633,13 @@ async function openWindowView(name) {
     const lr = await (await fetch(`/api/window/list?name=${encodeURIComponent(name)}`)).json();
     if (!lr.ok) { toast("⚠ " + (lr.error || "error"), true); return; }
     windows = lr.windows;
-  } catch { toast("⚠ no se pudo conectar con netmon", true); return; }
-  if (windows.length === 0) { toast(`${name}: sin ventana gráfica`); return; }
+  } catch { toast("⚠ could not connect to netmon", true); return; }
+  if (windows.length === 0) { toast(`${name}: no graphical window`); return; }
 
   document.getElementById("cfg").classList.add("hidden");
   closeTty();
   winName = name;
-  document.getElementById("winviewtitle").textContent = "ventana · " + name;
+  document.getElementById("winviewtitle").textContent = "window · " + name;
   document.getElementById("winview").classList.remove("hidden");
   document.getElementById("winviewbody").innerHTML = "";
 
@@ -683,7 +683,7 @@ async function watchWindowList(name) {
     await connectWindowView(name, freshlyOpened.id);
   } else if (winCurrentId !== null && !currentIds.has(winCurrentId)) {
     if (windows.length > 0) await connectWindowView(name, windows[0].id);
-    else { winStatus("⚠ la ventana se cerró"); if (winRfb) { winRfb.disconnect(); winRfb = null; } }
+    else { winStatus("⚠ the window was closed"); if (winRfb) { winRfb.disconnect(); winRfb = null; } }
   } else if (winCurrentId !== null) {
     const size = winSizes.get(winCurrentId);
     if (size && prevSize && (size.width !== prevSize.width || size.height !== prevSize.height)) {
@@ -709,13 +709,13 @@ async function connectWindowView(name, windowId) {
     winRfb = new RFB(body, `ws://${location.hostname}:${r.ws_port}/`);
     winRfb.addEventListener("connect", () => winStatus(""));
     winRfb.addEventListener("disconnect", (e) =>
-      winStatus(e.detail.clean ? "sesión cerrada" : "⚠ conexión perdida"));
+      winStatus(e.detail.clean ? "session closed" : "⚠ connection lost"));
     // Panel is already sized to the window's real geometry -- show it 1:1 instead of
-    // scaled to fit, per what was asked ("resolución original de la ventana").
+    // scaled to fit, per what was asked ("the window's original resolution").
     winRfb.scaleViewport = false;
     winRfb.resizeSession = false;
   } catch {
-    winStatus("⚠ no se pudo conectar con netmon");
+    winStatus("⚠ could not connect to netmon");
   }
 }
 
@@ -751,9 +751,9 @@ function bindEdgeToggle(btnId, group) {
 // the robot, so "silently frozen, looks fine" is a real hazard worth losing the
 // "paste any URL" genericness for. Embedding the stream ourselves (same origin, real
 // <video> element) gives two independent, real signals instead of none:
-//   1. RTCPeerConnection.connectionState -- "conexión perdida" on disconnected/failed.
+//   1. RTCPeerConnection.connectionState -- "connection lost" on disconnected/failed.
 //   2. video.currentTime not advancing for a few seconds despite connectionState still
-//      saying "connected" -- "sin frames nuevos" (a stalled encoder/pipeline on the
+//      saying "connected" -- "no new frames" (a stalled encoder/pipeline on the
 //      producer side, e.g. the known ricoh_omni_dds GStreamer issues, doesn't always
 //      drop the ICE connection -- the RTP session can stay up with nothing flowing).
 let livePc = null, liveWhepUrl = null, liveWatchdog = null, liveLastTime = -1, liveStallTicks = 0;
@@ -785,7 +785,7 @@ async function connectWhep(baseUrl) {
   // e.streams[0] -- some WHEP answers don't carry an a=msid grouping the track into a
   // stream, so e.streams comes back empty even though the track itself is fine, and
   // srcObject silently never gets set (connectionState still reaches "connected",
-  // exactly the "stuck on sin frames nuevos" symptom).
+  // exactly the "stuck on no new frames" symptom).
   const inboundStream = new MediaStream();
   pc.ontrack = (e) => {
     console.log("[netmon-live] ontrack", e.track.kind, "streams:", e.streams.length);
@@ -800,7 +800,7 @@ async function connectWhep(baseUrl) {
     if (pc.connectionState === "connected") {
       liveOverlay(null);
     } else if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
-      liveOverlay("⚠ conexión perdida (" + pc.connectionState + ") — reintentando…");
+      liveOverlay("⚠ connection lost (" + pc.connectionState + ") — retrying…");
       scheduleLiveReconnect();
     }
   };
@@ -837,7 +837,7 @@ async function connectWhep(baseUrl) {
     await pc.setRemoteDescription({ type: "answer", sdp: answer });
     console.log("[netmon-live] setRemoteDescription ok, signalingState:", pc.signalingState);
   } catch (e) {
-    liveOverlay("⚠ no se pudo conectar: " + e.message);
+    liveOverlay("⚠ could not connect: " + e.message);
     return;
   }
 
@@ -848,7 +848,7 @@ async function connectWhep(baseUrl) {
     if (v.currentTime === liveLastTime) {
       liveStallTicks++;
       if (liveStallTicks >= LIVE_STALL_TICKS)
-        liveOverlay("⚠ sin frames nuevos (" + (liveStallTicks * LIVE_STALL_CHECK_MS / 1000).toFixed(1) + "s)");
+        liveOverlay("⚠ no new frames (" + (liveStallTicks * LIVE_STALL_CHECK_MS / 1000).toFixed(1) + "s)");
     } else {
       liveStallTicks = 0;
       liveLastTime = v.currentTime;
@@ -965,7 +965,7 @@ function setupSlider1D(trackEl, knobEl, onChange) {
 function joyRenderArmed() {
   const btn = document.getElementById("joyArmBtn");
   btn.className = joyArmed ? "armed" : "disarmed";
-  btn.textContent = joyArmed ? "🔒 ARMADO — pulsa para desarmar" : "🔓 DESARMADO — pulsa para armar";
+  btn.textContent = joyArmed ? "🔒 ARMED — press to disarm" : "🔓 DISARMED — press to arm";
 }
 
 async function joySendTick() {
@@ -981,8 +981,8 @@ async function joySendTick() {
     const status = document.getElementById("joystatus");
     if (!r.ok) { status.textContent = "⚠ " + (r.error || "error"); return; }
     if (joyArmed !== r.armed) { joyArmed = r.armed; joyRenderArmed(); }
-    status.textContent = r.available ? "" : "⚠ sin conexión ICE (¿rcnode caído?)";
-  } catch { document.getElementById("joystatus").textContent = "⚠ sin conexión con netmon"; }
+    status.textContent = r.available ? "" : "⚠ no ICE connection (is rcnode down?)";
+  } catch { document.getElementById("joystatus").textContent = "⚠ no connection to netmon"; }
 }
 
 let joyPadReset = null, joySliderReset = null;
@@ -1106,14 +1106,14 @@ async function init() {
   btnStart.addEventListener("click", withCooldown(btnStart, () => selected && sendAction("start", selected)));
   btnRestart.addEventListener("click", withCooldown(btnRestart, () => selected && sendAction("restart", selected)));
   btnStop.addEventListener("click", withCooldown(btnStop,
-    () => { if (selected && confirm(`¿Parar ${selected}?`)) sendAction("stop", selected); }));
+    () => { if (selected && confirm(`Stop ${selected}?`)) sendAction("stop", selected); }));
   btnBuild.addEventListener("click", withCooldown(btnBuild, () => {
     if (!selected) return;
     sendAction("build", selected);
     // NOTE: cbuild still runs as a plain background process writing to
     // ~/.local/logs/<name>.out (see launcher.py::_build) -- it is NOT inside the tmux
     // session, so 🖥 tty won't show its output. No viewer for build output yet.
-    toast(`build → ${selected} (sin panel de salida todavía)`);
+    toast(`build → ${selected} (no output panel yet)`);
   }));
 
   document.getElementById("selConfig").addEventListener("click", () => selected && openConfig(selected));
@@ -1147,15 +1147,15 @@ function renderBattery(b) {
   el.style.display = "";
   if (!b.available) {
     el.className = "pill warn";
-    el.textContent = "🔋 sin datos";
-    el.title = "batería: " + (b.error || "n/d");
+    el.textContent = "🔋 no data";
+    el.title = "battery: " + (b.error || "n/a");
     return;
   }
   const pct = b.percentage;
   const icon = b.state === "Charging" ? "⚡" : "🔋";
   el.className = "pill " + (pct <= 20 ? "warn" : "ok");
   el.textContent = `${icon} ${pct}%  ${b.voltage}V ${b.current > 0 ? "+" : ""}${b.current}A`;
-  el.title = `batería ${b.state} — ${b.voltage} V · ${b.current} A · ${pct}%`;
+  el.title = `battery ${b.state} — ${b.voltage} V · ${b.current} A · ${pct}%`;
 }
 
 async function poll() {

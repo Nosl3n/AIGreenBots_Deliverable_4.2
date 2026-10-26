@@ -258,12 +258,12 @@ _LAUNCH_WRAPPERS = {"chrt", "nice", "ionice", "taskset", "vglrun", "env"}
 
 def _real_exe(cmd: str) -> str:
     """
-    Nombre del binario real que acaba ejecutándose, saltando wrappers de
-    scheduling/GPU conocidos (chrt, vglrun, ...) y sus flags, y el patrón de
-    respaldo "wrapper cmd || cmd" (ver chrt en los toml de imu_fusion/Base,
-    sesión 2026-07-29) -- sin esto, _remove_existing() dejaba de reconocer
-    el proceso en cuanto el cmd empezaba por un wrapper (exe pasaba a ser
-    "chrt"/"vglrun" en vez del binario real), y no mataba instancias viejas
+    Name of the real binary that ends up running, skipping known scheduling/GPU
+    wrappers (chrt, vglrun, ...) and their flags, and the fallback pattern
+    "wrapper cmd || cmd" (see chrt in the imu_fusion/Base tomls, session
+    2026-07-29) -- without this, _remove_existing() stopped recognising the
+    process as soon as the cmd started with a wrapper (exe became "chrt"/"vglrun"
+    instead of the real binary), and did not kill old instances
     antes de relanzar.
     """
     tail = cmd.split(" || ")[-1].strip()
@@ -464,8 +464,8 @@ def run_launcher(toml_path, launcher, layer, start_webots=False, start_rcnode=Fa
         try:
             url = server.start()
         except OSError as e:
-            console.print(f"[yellow]⚠ Puerto :{web_port} ocupado ({e}); otro proceso sirve la web. "
-                          f"Sigo actualizando el registro.[/yellow]")
+            console.print(f"[yellow]⚠ Port :{web_port} busy ({e}); another process serves the web. "
+                          f"Still updating the registry.[/yellow]")
             if bw:
                 bw.stop()
             mlock.release()

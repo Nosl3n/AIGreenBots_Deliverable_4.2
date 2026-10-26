@@ -17,10 +17,10 @@
 // ── Shadow filters ([Experiment] ShadowFilters) ─────────────────────────────────────────────────────────────
 //   Extra filters fed the SAME odometry, gyro, IMU yaw and fixes as the published one, never published, only
 //   logged ([Diag] ExperimentCsv) — so E1 compares configurations on identical data:
-//     A  "actual"    the current filter: fixed sigma, Gaussian, fix applied on arrival
-//     B  "receptor"  receiver sigma + Student-t + latency compensation
-//     C  "sin_gnss"  initialised like the others, then never fused a fix (dead reckoning + IMU yaw)
-//     D  "sin_yaw"   like A but without the IMU's absolute yaw
+//     A  "current"   the current filter: fixed sigma, Gaussian, fix applied on arrival
+//     B  "receiver"  receiver sigma + Student-t + latency compensation
+//     C  "no_gnss"   initialised like the others, then never fused a fix (dead reckoning + IMU yaw)
+//     D  "no_yaw"    like A but without the IMU's absolute yaw
 #pragma once
 
 #include "openfield_ekf.h"

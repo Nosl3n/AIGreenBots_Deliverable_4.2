@@ -163,7 +163,7 @@ void SpecificWorker::initialize()
         extrinsicVector = {0,0,0,0,0,0};
     }
 
-    // Asegurarse de que tenga al menos 6 elementos
+    // Make sure it has at least 6 elements
     if (extrinsicVector.size() < 6) {
         throw std::runtime_error("Config.Extrinsic must be 6 values (x, y, z, rotX, rotY, rotZ)");
     }
@@ -204,12 +204,12 @@ void SpecificWorker::initialize()
         #endif
         init_parameters.coordinate_units = sl::UNIT::MILLIMETER; // Use millimeter units (for depth measurements)
         init_parameters.coordinate_system = sl::COORDINATE_SYSTEM::RIGHT_HANDED_Z_UP; // Use a right-handed Y-up coordinate system
-        init_parameters.enable_image_enhancement = true; // Mejora visual en condiciones complejas
-        //init_parameters.async_grab_camera_recovery = false; // Evita bloqueos si hay pérdida temporal de conexión
-        //init_parameters.camera_disable_self_calib = false; // Habilitar autocalibración mejora tracking en largo plazo
+        init_parameters.enable_image_enhancement = true; // Visual enhancement in difficult conditions
+        //init_parameters.async_grab_camera_recovery = false; // Avoids freezes on a temporary connection loss
+        //init_parameters.camera_disable_self_calib = false; // Self-calibration improves long-term tracking
 
     
-        // Abrir cámara
+        // Open the camera
         returned_state = zed.open(init_parameters);
         if (returned_state != sl::ERROR_CODE::SUCCESS) {
             std::cout << "Error " << returned_state << ", exit program." << std::endl;
@@ -218,12 +218,12 @@ void SpecificWorker::initialize()
 
         // TRACKING PARAMETERS
         #ifndef POSE
-            //init_parameters.camera_fps = 60; // 30 FPS balancea precisión y estabilidad
+            //init_parameters.camera_fps = 60; // 30 FPS balances precision and stability
 
             tracking_parameters.enable_imu_fusion = true; // Combina visual e IMU
-            tracking_parameters.enable_pose_smoothing = true; // Estabiliza la pose (algo más lento)
-            tracking_parameters.set_as_static = false; // Asegura que use movimiento real
-            tracking_parameters.mode = sl::POSITIONAL_TRACKING_MODE::GEN_2; // Último modo de seguimiento (mejor IMU)
+            tracking_parameters.enable_pose_smoothing = true; // Smooths the pose (a bit slower)
+            tracking_parameters.set_as_static = false; // Makes it use real motion
+            tracking_parameters.mode = sl::POSITIONAL_TRACKING_MODE::GEN_2; // Latest tracking mode (better IMU)
             tracking_parameters.enable_area_memory = true;
 
         #endif
@@ -687,21 +687,21 @@ void SpecificWorker::process_pose_data()
     #else
         zed.getPosition(zed_pose, sl::REFERENCE_FRAME::CAMERA);
     #endif
-    // 2) traslación y orientación
+    // 2) translation and orientation
     auto t_cam_sl = zed_pose.getTranslation();
     auto r_cam_sl = zed_pose.getEulerAngles(true);
     Eigen::Vector3f t_cam(t_cam_sl.tx, t_cam_sl.ty, t_cam_sl.tz);
     Eigen::AngleAxisf aa_x(r_cam_sl.x, Eigen::Vector3f::UnitX());
     Eigen::AngleAxisf aa_y(r_cam_sl.y, Eigen::Vector3f::UnitY());
     Eigen::AngleAxisf aa_z(r_cam_sl.z, Eigen::Vector3f::UnitZ());
-    Eigen::Quaternionf q_cam = aa_z * aa_y * aa_x;  // orden ZYX
+    Eigen::Quaternionf q_cam = aa_z * aa_y * aa_x;  // ZYX order
 
-    // 3) Transformación fija cámara?robot
+    // 3) Fixed camera→robot transform
     static const Eigen::Vector3f cam_to_robot_t(60.0f, 76.6f, 0.0f);
 
-    // 4) Velocidades (diferencial)
+    // 4) Velocities (differential)
     long timestamp = zed_pose.timestamp.getNanoseconds();
-    float dt = (timestamp - last_timestamp) * 1e-9f;  // segundos
+    float dt = (timestamp - last_timestamp) * 1e-9f;  // seconds
     last_timestamp = timestamp;
     float* cov = zed_pose.pose_covariance;
 
@@ -723,12 +723,12 @@ void SpecificWorker::process_pose_data()
     Eigen::Vector3f v_cam = t_cam / dt;
     Eigen::Vector3f omega_cam(r_cam_sl.x / dt, r_cam_sl.y / dt, r_cam_sl.z / dt);
 
-    // 6) Corrección de velocidad lineal: v_robot = v_cam + ?_cam × (lever arm)
+    // 6) Linear velocity correction: v_robot = v_cam + ω_cam × (lever arm)
     Eigen::Vector3f lever = q_cam * cam_to_robot_t;
     Eigen::Vector3f v_robot = v_cam + omega_cam.cross(lever);
     Eigen::Vector3f omega_robot = omega_cam;
 
-    // 7) Publicación
+    // 7) Publication
     RoboCompFullPoseEstimation::FullPoseEuler pose;
     pose.x  = t_cam_sl.x;
     pose.y  = t_cam_sl.y;
@@ -764,9 +764,9 @@ void SpecificWorker::process_pose_data()
 void SpecificWorker::sensorsLoop()
 {
 #ifdef HAVE_ZED_SDK
-    const int N = 16;                   // Downsampling factor (publicarás a 100 Hz si N=4)
+    const int N = 16;                   // Downsampling factor (publishes at 100 Hz if N=4)
     int sample_count = 0;
-    // Acumuladores para aceleración y giro
+    // Accumulators for acceleration and turn rate
     sl::float3 acc_sum{0,0,0}, gyr_sum{0,0,0};
     while (running)
     {
@@ -774,10 +774,10 @@ void SpecificWorker::sensorsLoop()
         auto start = std::chrono::high_resolution_clock::now();
         zed.getSensorsData(sensors_data, sl::TIME_REFERENCE::CURRENT);
 
-        // Solo consideramos IMU para downsampling
+        // Only the IMU is downsampled
         if (ts.isNew(sensors_data.imu))
         {
-            // Acumular muestras
+            // Accumulate samples
             const auto &imu = sensors_data.imu;
             acc_sum.x += imu.linear_acceleration.x;
             acc_sum.y += imu.linear_acceleration.y;
@@ -789,7 +789,7 @@ void SpecificWorker::sensorsLoop()
 
             if (sample_count >= N)
             {
-                // Calcular promedio
+                // Compute the mean
                 sl::float3 acc_avg{ acc_sum.x / float(N),
                                     acc_sum.y / float(N),
                                     acc_sum.z / float(N) };
@@ -797,7 +797,7 @@ void SpecificWorker::sensorsLoop()
                                     gyr_sum.y / float(N),
                                     gyr_sum.z / float(N) };
 
-                // Publicar por proxy
+                // Publish through the proxy
                 RoboCompIMU::DataImu imu_data;
                 RoboCompIMU::Gyroscope gyro_data;
                 gyro_data.XGyr = gyr_avg.x;
@@ -814,13 +814,13 @@ void SpecificWorker::sensorsLoop()
 
                 this->imupub_pubproxy->publish(imu_data);
 
-                // Reiniciar acumuladores
+                // Reset the accumulators
                 sample_count = 0;
                 acc_sum = {0,0,0};
                 gyr_sum = {0,0,0};
             }
         }
-        // Publicar magnetómetro y barómetro
+        // Publish magnetometer and barometer
         if (ts.isNew(sensors_data.magnetometer))
         {
 //            std::cout << " - Magnetometer\n\t Magnetic Field: {"

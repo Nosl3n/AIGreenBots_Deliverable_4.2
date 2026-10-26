@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """Run ONE experiment run: config overlays -> stack up -> recorder + sysmon -> driver -> stack down -> logs.
 
-    python3 run_experiment.py E3 --variante base [--mundo husky_apple] [--semilla 1] [--capturas]
-    python3 run_experiment.py --lista                 # experiments and variants in configs/experimentos.toml
+    python3 run_experiment.py E3 --variant base [--world husky_apple] [--seed 1] [--screenshots]
+    python3 run_experiment.py --list                  # experiments and variants in configs/experiments.toml
 
-Every experiment and variant lives in experiments/configs/experimentos.toml (see experiments/README.md): a variant
+Every experiment and variant lives in experiments/configs/experiments.toml (see experiments/README.md): a variant
 is only a set of `component -> {"Section.Key" = value}` overrides applied to COPIES of the components' configs
 (written into the run folder), so the repo configs are never touched and every run records exactly what it ran.
 
-Output: experiments/resultados/<EXP>/<mundo>__<variante>__s<semilla>/ with
+Output: experiments/results/<EXP>/<world>__<variant>__s<seed>/ with
     record.jsonl   recorder.py (poses, ground truth, persons, trunks, obstacles, DSR rates)
     sysmon.jsonl   sysmon.py (CPU / RAM / GPU per component)
     driver.log     the route driver's output
-    cfg/           the overlaid configs;  launch_*.toml  the generated launcher files
+    cfg/           the overlaid configs (only the components with overrides);  launch_*.toml  the generated launcher files
     logs/          tail of each component's stdout/stderr;  openfield/  the localization CSVs
-    run.json       what was run (experiment, variant, world, seed, times, outcome)
+    run.json       what was run (experiment, variant, world, seed, commit, times, outcome); git.diff  uncommitted changes
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ import common  # noqa: E402
 from common import log  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parent
-DEFS = common.EXP / "configs" / "experimentos.toml"
+DEFS = common.EXP / "configs" / "experiments.toml"
 
 
 def load_defs() -> dict:
@@ -44,8 +44,8 @@ def load_defs() -> dict:
 def merged_overrides(defs: dict, exp: str, variant: str, seed: int) -> dict[str, dict]:
     """common overrides <- experiment overrides <- variant overrides; '{seed}' in a string value -> the seed."""
     out: dict[str, dict] = {}
-    layers = [defs.get("comun", {}).get("overrides", {}), defs[exp].get("overrides", {}),
-              defs[exp]["variantes"].get(variant, {})]
+    layers = [defs.get("common", {}).get("overrides", {}), defs[exp].get("overrides", {}),
+              defs[exp]["variants"].get(variant, {})]
     for layer in layers:
         for comp, kv in layer.items():
             if not isinstance(kv, dict):
@@ -87,47 +87,47 @@ def git_state(run_dir: Path) -> dict:
     diff = git("diff", "HEAD")
     if diff:
         (run_dir / "git.diff").write_text(diff)
-    return {"commit": git("rev-parse", "HEAD").strip(), "cambios_sin_commit": bool(diff or git("status", "--porcelain"))}
+    return {"commit": git("rev-parse", "HEAD").strip(), "uncommitted_changes": bool(diff or git("status", "--porcelain"))}
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("exp", nargs="?")
-    ap.add_argument("--variante", default="base")
-    ap.add_argument("--mundo", default=None)
-    ap.add_argument("--semilla", type=int, default=1)
-    ap.add_argument("--duracion", type=float, default=None, help="override the experiment's duration (s)")
-    ap.add_argument("--capturas", action="store_true", help="take window screenshots during the run")
-    ap.add_argument("--lista", action="store_true")
-    ap.add_argument("--etiqueta", default="", help="suffix for the run folder")
+    ap.add_argument("--variant", default="base")
+    ap.add_argument("--world", default=None)
+    ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--duration", type=float, default=None, help="override the experiment's duration (s)")
+    ap.add_argument("--screenshots", action="store_true", help="take window screenshots during the run")
+    ap.add_argument("--list", action="store_true")
+    ap.add_argument("--label", default="", help="suffix for the run folder")
     a = ap.parse_args()
 
     defs = load_defs()
-    if a.lista or not a.exp:
+    if a.list or not a.exp:
         for k, v in defs.items():
-            if k == "comun":
+            if k == "common":
                 continue
-            print(f"{k}: {v.get('descripcion', '')}")
-            for var in v.get("variantes", {}):
-                print(f"    --variante {var}")
+            print(f"{k}: {v.get('description', '')}")
+            for var in v.get("variants", {}):
+                print(f"    --variant {var}")
         return
 
     E = defs[a.exp]
-    world_name = a.mundo or E.get("mundo", "husky_apple")
+    world_name = a.world or E.get("world", "husky_apple")
     world = common.world_path(world_name)
-    stack = common.FULL_STACK if E.get("pila", "completa") == "completa" else common.LOC_STACK
-    stack = [c for c in stack if c not in E.get("excluir", [])]
-    duration = a.duracion or float(E.get("duracion_s", 300))
-    run_dir = common.RESULTS / a.exp / f"{world.stem}__{a.variante}__s{a.semilla}{a.etiqueta}"
+    stack = common.FULL_STACK if E.get("stack", "full") == "full" else common.LOC_STACK
+    stack = [c for c in stack if c not in E.get("exclude", [])]
+    duration = a.duration or float(E.get("duration_s", 300))
+    run_dir = common.RESULTS / a.exp / f"{world.stem}__{a.variant}__s{a.seed}{a.label}"
     if run_dir.exists():
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True)
 
-    overrides = merged_overrides(defs, a.exp, a.variante, a.semilla)
+    overrides = merged_overrides(defs, a.exp, a.variant, a.seed)
     cfg_paths = {c: common.write_overlay(c, kv, run_dir / "cfg") for c, kv in overrides.items() if c in stack}
-    meta = {"exp": a.exp, "variante": a.variante, "mundo": world.stem, "semilla": a.semilla, "pila": stack,
-            "overrides": overrides, "inicio": time.time(), "duracion_s": duration, **git_state(run_dir)}
-    log(f"{a.exp} / {a.variante} / {world.stem} / seed {a.semilla} -> {run_dir}")
+    meta = {"exp": a.exp, "variant": a.variant, "world": world.stem, "seed": a.seed, "stack": stack,
+            "overrides": overrides, "start": time.time(), "duration_s": duration, **git_state(run_dir)}
+    log(f"{a.exp} / {a.variant} / {world.stem} / seed {a.seed} -> {run_dir}")
 
     common.stop_stack() if common.stack_running() else None
     # openfield's CSVs are per run: move the old ones aside so the run's files are only this run.
@@ -138,13 +138,13 @@ def main():
     procs = []
     outcome = "ok"
     try:
-        common.start_stack(world, stack, cfg_paths, run_dir, minimize=bool(E.get("minimizar", False)))
+        common.start_stack(world, stack, cfg_paths, run_dir, minimize=bool(E.get("minimize", False)))
         if not common.wait_for_bridge(90):
             raise RuntimeError("bridge never answered")
-        ready = wait_operating(run_dir, stack, float(E.get("espera_operating_s", 150)))
+        ready = wait_operating(run_dir, stack, float(E.get("operating_wait_s", 150)))
         meta["operating"] = ready
         log("agents Operating" if ready else "WARNING: not every agent printed Operating; going on")
-        time.sleep(float(E.get("calentamiento_s", 10)))
+        time.sleep(float(E.get("warmup_s", 10)))
 
         procs.append(subprocess.Popen([sys.executable, str(SCRIPTS / "recorder.py"), str(run_dir / "record.jsonl"),
                                        "--world", str(world), "--rate", str(E.get("rate_hz", 10))],
@@ -154,31 +154,31 @@ def main():
         time.sleep(3)
 
         driver = None
-        drv = E.get("conductor", "ruta")
-        if drv == "ruta":
-            cmd = [sys.executable, str(common.UTILS / "run_route.py"), "--route", E["ruta"],
+        drv = E.get("driver", "route")
+        if drv == "route":
+            cmd = [sys.executable, str(common.UTILS / "run_route.py"), "--route", E["route"],
                    "--timeout", str(E.get("timeout_waypoint_s", 120)), "--tol", str(E.get("tol_m", 0.6))]
             driver = subprocess.Popen(cmd, cwd=str(common.UTILS), stdout=open(run_dir / "driver.log", "w"),
                                       stderr=subprocess.STDOUT)
         elif drv == "gt":
-            cmd = [sys.executable, str(SCRIPTS / "gt_driver.py"), "--route", E["ruta"],
-                   "--speed", str(E.get("velocidad", 0.6))]
+            cmd = [sys.executable, str(SCRIPTS / "gt_driver.py"), "--route", E["route"],
+                   "--speed", str(E.get("speed", 0.6))]
             driver = subprocess.Popen(cmd, stdout=open(run_dir / "driver.log", "w"), stderr=subprocess.STDOUT)
 
         t0 = time.time()
         meta["t0_driver"] = t0
-        shots = [float(s) for s in E.get("capturas_s", [60, 150])] if a.capturas else []
+        shots = [float(s) for s in E.get("screenshots_s", [60, 150])] if a.screenshots else []
         while time.time() - t0 < duration:
             el = time.time() - t0
             for s in list(shots):
                 if el >= s:
                     shots.remove(s)
-                    import capturas
-                    capturas.open_zed()
+                    import screenshots
+                    screenshots.open_zed()
                     time.sleep(2)
-                    got = capturas.capture(run_dir / "capturas", prefix=f"t{int(s):04d}_")
+                    got = screenshots.capture(run_dir / "screenshots", prefix=f"t{int(s):04d}_")
                     log(f"screenshots t={s:.0f}s: {len(got)}")
-            if driver is not None and driver.poll() is not None :
+            if driver is not None and driver.poll() is not None:
                 log("driver finished")
                 break
             time.sleep(1.0)
@@ -188,7 +188,7 @@ def main():
                 driver.wait(15)
             except subprocess.TimeoutExpired:
                 driver.terminate()
-        meta["fin_conductor"] = time.time()
+        meta["driver_end"] = time.time()
     except Exception as e:
         outcome = f"error: {e}"
         log(outcome)
@@ -206,8 +206,8 @@ def main():
         dst.mkdir(exist_ok=True)
         for f in of_tmp.glob("exp_*.csv"):
             shutil.move(str(f), dst / f.name)
-        meta["fin"] = time.time()
-        meta["resultado"] = outcome
+        meta["end"] = time.time()
+        meta["outcome"] = outcome
         (run_dir / "run.json").write_text(json.dumps(meta, indent=2, default=str))
         log(f"done ({outcome})")
 

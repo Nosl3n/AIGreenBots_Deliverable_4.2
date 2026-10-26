@@ -51,7 +51,7 @@ class BandwidthMonitor:
             except OSError:
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, _RCVBUF)
         except PermissionError:
-            self.error = "sin permisos de captura (setcap cap_net_raw+ep en python3, o sudo)"
+            self.error = "no capture permission (setcap cap_net_raw+ep on python3, or sudo)"
             return
         except Exception as e:  # interfaz inexistente, etc.
             self.error = str(e)

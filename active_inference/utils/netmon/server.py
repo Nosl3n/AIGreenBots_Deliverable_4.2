@@ -160,7 +160,7 @@ class MonitorServer:
             "media": _media_stats(),
             "battery": _battery(),
             "bw_available": bool(self.bw and self.bw.available),
-            "bw_error": self.bw.error if self.bw else "captura deshabilitada",
+            "bw_error": self.bw.error if self.bw else "capture disabled",
         }
 
     def _known_names(self):
@@ -178,7 +178,7 @@ class MonitorServer:
             return {"ok": False, "error": "componente desconocido", "text": "", "path": ""}
         path = _config_path(c)
         if not path or not os.path.isfile(path):
-            return {"ok": False, "error": "sin archivo de configuración detectable", "text": "", "path": path or ""}
+            return {"ok": False, "error": "no detectable config file", "text": "", "path": path or ""}
         try:
             with open(path, "r", errors="replace") as f:
                 text = f.read()
@@ -192,7 +192,7 @@ class MonitorServer:
             return {"ok": False, "error": "componente desconocido"}
         path = _config_path(c)
         if not path or not os.path.isfile(path):
-            return {"ok": False, "error": "sin archivo de configuración detectable"}
+            return {"ok": False, "error": "no detectable config file"}
         try:
             shutil.copy2(path, path + ".bak")  # single-generation safety net before overwrite
             with open(path, "w") as f:
@@ -203,16 +203,16 @@ class MonitorServer:
 
     def action(self, action, name):
         if action not in ("stop", "start", "restart", "build") or name not in self._known_names():
-            return {"ok": False, "error": "acción o componente inválido"}
+            return {"ok": False, "error": "invalid action or component"}
         push_command(action, name)
         return {"ok": True, "action": action, "name": name}
 
     def logs(self, name, stream, lines):
         if name not in self._known_names() or stream not in ("out", "err"):
-            return {"ok": False, "error": "componente/stream inválido", "text": ""}
+            return {"ok": False, "error": "invalid component/stream", "text": ""}
         path = os.path.join(_LOGS_DIR, f"{os.path.basename(name)}.{stream}")
         if not os.path.exists(path):
-            return {"ok": True, "name": name, "stream": stream, "text": "(sin log)"}
+            return {"ok": True, "name": name, "stream": stream, "text": "(no log)"}
         try:
             with open(path, "r", errors="replace") as f:
                 text = "".join(f.readlines()[-lines:])
@@ -240,16 +240,16 @@ class MonitorServer:
             return {"ok": True, "text": "", "alive": False}
         text = term_tmux.capture(name, lines=lines)
         if text is None:
-            return {"ok": False, "error": "fallo al capturar la sesión tmux", "text": "", "alive": False}
+            return {"ok": False, "error": "failed to capture the tmux session", "text": "", "alive": False}
         return {"ok": True, "text": text, "alive": True}
 
     def term_input(self, name, text):
         if name not in self._known_names():
             return {"ok": False, "error": "componente desconocido"}
         if not isinstance(text, str) or not text or len(text) > self._TERM_TEXT_MAX:
-            return {"ok": False, "error": "texto inválido o demasiado largo"}
+            return {"ok": False, "error": "invalid or too long text"}
         if not term_tmux.send_text(name, text):
-            return {"ok": False, "error": "sesión tmux no disponible"}
+            return {"ok": False, "error": "tmux session not available"}
         return {"ok": True}
 
     def term_key(self, name, key):
@@ -258,7 +258,7 @@ class MonitorServer:
         if key not in self._TERM_KEY_ALLOWED:
             return {"ok": False, "error": "tecla no permitida"}
         if not term_tmux.send_key(name, key):
-            return {"ok": False, "error": "sesión tmux no disponible"}
+            return {"ok": False, "error": "tmux session not available"}
         return {"ok": True}
 
     def term_resize(self, name, cols, rows):
@@ -267,7 +267,7 @@ class MonitorServer:
         try:
             cols, rows = int(cols), int(rows)
         except (TypeError, ValueError):
-            return {"ok": False, "error": "cols/rows inválidos"}
+            return {"ok": False, "error": "invalid cols/rows"}
         if not (1 <= cols <= 500 and 1 <= rows <= 200):
             return {"ok": False, "error": "cols/rows fuera de rango"}
         term_tmux.resize(name, cols, rows)   # best-effort; a detached session may ignore it
@@ -292,7 +292,7 @@ class MonitorServer:
             try:
                 v = float(axes.get(k, 0.0))
             except (TypeError, ValueError):
-                return {"ok": False, "error": f"eje '{k}' inválido"}
+                return {"ok": False, "error": f"invalid axis '{k}'"}
             if not (v == v and abs(v) != float("inf")):   # NaN != NaN; reject inf too
                 return {"ok": False, "error": f"eje '{k}' no finito"}
             clean_axes[k] = max(-bound, min(bound, v))
@@ -310,7 +310,7 @@ class MonitorServer:
             return {"ok": False, "error": "componente desconocido", "windows": []}
         pid = c.get("pid")
         if not pid:
-            return {"ok": False, "error": "componente sin PID (¿está parado?)", "windows": []}
+            return {"ok": False, "error": "component has no PID (is it stopped?)", "windows": []}
         wins = self.windows.list_windows(pid)
         return {"ok": True, "windows": [
             {"id": wid, "title": title, "width": w, "height": h} for wid, title, w, h in wins
@@ -322,12 +322,12 @@ class MonitorServer:
             return {"ok": False, "error": "componente desconocido"}
         pid = c.get("pid")
         if not pid:
-            return {"ok": False, "error": "componente sin PID (¿está parado?)"}
+            return {"ok": False, "error": "component has no PID (is it stopped?)"}
         if window_id is not None:
             try:
                 window_id = int(window_id)
             except (TypeError, ValueError):
-                return {"ok": False, "error": "window_id inválido"}
+                return {"ok": False, "error": "invalid window_id"}
             # Only accept an id that's genuinely one of THIS component's own windows --
             # never let the browser point x11vnc at an arbitrary window id on the display.
             valid_ids = {w[0] for w in self.windows.list_windows(pid)}
@@ -335,7 +335,7 @@ class MonitorServer:
                 return {"ok": False, "error": "esa ventana no pertenece a este componente"}
         port = self.windows.open(name, pid, window_id=window_id)
         if port is None:
-            return {"ok": False, "error": "no se encontró ninguna ventana para este componente"}
+            return {"ok": False, "error": "no window found for this component"}
         return {"ok": True, "ws_port": port}
 
     def window_close(self, name):
@@ -420,7 +420,7 @@ class MonitorServer:
                 try:
                     body = self._json_body()
                 except (ValueError, TypeError):
-                    self._send(400, json.dumps({"ok": False, "error": "json inválido"}), "application/json")
+                    self._send(400, json.dumps({"ok": False, "error": "invalid json"}), "application/json")
                     return
                 if route == "/api/action":
                     res = server.action(body.get("action"), body.get("name"))

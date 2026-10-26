@@ -1,225 +1,207 @@
-# netmon — monitor web de interconexión RoboComp
+# netmon — RoboComp interconnection web monitor
 
-Lanza los componentes/agentes de una pila RoboComp, los monitoriza (estado, CPU, memoria)
-y sirve un **mapa web** de su interconexión: proxies ICE (RPC), publicación/suscripción por
-IceStorm, publicaciones DDS (con ancho de banda real medido, no estimado), esferas del grafo
-DSR, ancho de banda por conexión y una ventana de vídeo en directo para el stream RTSP/WebRTC
-de mediamtx.
+Launches the components/agents of a RoboComp stack, monitors them (state, CPU, memory) and serves a **web map** of
+how they are interconnected: ICE proxies (RPC), IceStorm publish/subscribe, DDS publications (with the real
+measured bandwidth, not an estimate), DSR graph spheres, bandwidth per connection and a live video window for the
+mediamtx RTSP/WebRTC stream.
 
-Todo con **stdlib** en el lado Python (sin FastAPI/scapy): web con `http.server`, captura con
-raw socket. La única pieza no-stdlib es un binario C++ opcional (`dds_stats_bridge/`) para
-medir ancho de banda DDS real — ver más abajo.
+The Python side uses only the **stdlib** (no FastAPI/scapy): the web server is `http.server`, capture uses a raw
+socket. The only non-stdlib piece is an optional C++ binary (`dds_stats_bridge/`) that measures the real DDS
+bandwidth — see below.
 
 ---
 
-## Lanzamiento
+## Launching
 
-Desde `~/robocomp/components/active_inference/utils`:
+From `~/robocomp/AiGB_UEx_Navigation/active_inference/utils`:
 
 ```bash
-# Solo capa sensorimotor — hospeda la web en http://0.0.0.0:8080 (accesible desde la red)
-python3 subcognitive.py sub.toml          # simulación Webots
-python3 subcognitive.py sub_real.toml     # hardware real (robot)
+# Sensorimotor layer only — hosts the web at http://0.0.0.0:8080 (reachable from the network)
+python3 subcognitive.py sub_husky.toml
 
-# Añadir la capa cognitiva (agentes + esfera DSR) — en otra terminal, cualquier orden
-python3 cognitive.py cognitive.toml
+# Add the cognitive layer (agents + DSR sphere) — in another terminal, any order
+python3 cognitive.py cognitive_husky.toml
 ```
 
-Abre **http://\<ip-de-la-máquina\>:8080** (o `http://127.0.0.1:8080` en local). Para en cada
-terminal con `Ctrl+C` (termina sus procesos, libera el lock del monitor y borra su registro).
+Open **http://\<machine-ip\>:8080** (or `http://127.0.0.1:8080` locally). Stop each terminal with `Ctrl+C` (it ends
+its processes, releases the monitor lock and deletes its registry entry).
 
 ### Flags
 
-| Flag | Efecto |
+| Flag | Effect |
 |------|--------|
-| `--web-host IP` | Dirección de bind de la web (por defecto `0.0.0.0`, todas las interfaces) |
-| `--web-port N` | Puerto de la web (ambos launchers deben usar el mismo; por defecto `8080`) |
-| `--no-web` | No hospedar la web (solo tabla de consola + registro `/tmp`) |
-| `--no-bw` | Desactivar la captura de ancho de banda ICE (loopback) |
-| `--no-webots` | (`subcognitive.py`) No autoarrancar Webots — solo aplica si no hay `[general]` en el TOML, ver abajo |
+| `--web-host IP` | Web bind address (default `0.0.0.0`, every interface) |
+| `--web-port N` | Web port (both launchers must use the same one; default `8080`) |
+| `--no-web` | Do not host the web (console table + `/tmp` registry only) |
+| `--no-bw` | Disable the ICE (loopback) bandwidth capture |
+| `--no-webots` | (`subcognitive.py`) Do not auto-start Webots — only applies if the TOML has no `[general]`, see below |
 
-### Arranque de Webots / rcnode vía config
+### Starting Webots / rcnode from the config
 
-En lugar de (o además de) los flags de CLI, cualquier TOML de componentes puede llevar una
-tabla `[general]` que manda sobre lo que se pase por línea de comandos:
+Instead of (or as well as) the CLI flags, any component TOML can carry a `[general]` table that overrides the
+command line:
 
 ```toml
 [general]
-start_webots = false   # p.ej. sub_real.toml: hardware real, sin simulador
-start_rcnode = true    # arranca rcnode (icebox) si no está ya corriendo
+start_webots = false   # e.g. real hardware, no simulator
+start_rcnode = true    # starts rcnode (icebox) if it is not already running
 ```
 
-Ambos arranques son idempotentes: si el proceso ya está corriendo (Webots, o `icebox` para
-rcnode) se reutiliza en vez de relanzar.
+Both starts are idempotent: if the process is already running (Webots, or `icebox` for rcnode) it is reused
+instead of relaunched.
 
-### Ancho de banda ICE por edge (opcional)
+### ICE bandwidth per edge (optional)
 
-Los `KB/s` de las aristas RPC solo aparecen si el intérprete tiene permiso de captura. **Una
-vez**:
+The `KB/s` on the RPC edges only appear if the interpreter has capture permission. **Once**:
 
 ```bash
 sudo setcap cap_net_raw,cap_net_admin+eip $(readlink -f $(which python3))
 ```
 
-Sin esto el mapa funciona igual (estado, topología, aristas); solo faltan los bytes/s de ICE.
-El ancho de banda **DDS** no depende de esto — ver la sección dedicada más abajo.
+Without it the map works the same (state, topology, edges); only the ICE bytes/s are missing. The **DDS** bandwidth
+does not depend on this — see its own section below.
 
 ---
 
-## Arquitectura
+## Architecture
 
-Cada launcher escribe su estado en un registro común de `/tmp`; el primero que arranca
-toma el rol de servidor web y lee **todos** los registros. Si muere, otro lo releva.
+Each launcher writes its state to a shared registry in `/tmp`; the first one to start takes the web-server role
+and reads **every** registry. If it dies, another one takes over.
 
 ```
 subcognitive.py ─┐                          /tmp/robocomp_netmon/
 cognitive.py ────┼─▶ netmon/launcher.py ──▶   agents/subcognitive.json
-                  │      (cada uno              agents/cognitive.json
-                  │       actualiza 1×/s)       monitor.lock  ◀─ 1 solo servidor web
-                  └─▶ el que tiene monitor.lock sirve la web con la unión de registros
+                  │      (each one               agents/cognitive.json
+                  │       updates 1×/s)          monitor.lock  ◀─ a single web server
+                  └─▶ the holder of monitor.lock serves the web with the union of registries
 ```
 
-- **Registro** (`registry.py`): `agents/<launcher>.json` con `{name, status, cpu, mem, pid,
-  cwd, cmd, layer, domain}`. Registros con más de 5 s sin actualizar se ignoran.
-- **Lock** (`monitor.lock`): create-exclusive por PID; el host stale (PID muerto o viejo)
-  se roba y se releva automáticamente.
+- **Registry** (`registry.py`): `agents/<launcher>.json` with `{name, status, cpu, mem, pid, cwd, cmd, layer,
+  domain}`. Entries not updated for more than 5 s are ignored.
+- **Lock** (`monitor.lock`): create-exclusive per PID; a stale host (dead or old PID) is taken over automatically.
 
 ---
 
-## La vista web
+## The web view
 
-Layout **jerárquico de abajo arriba**:
+**Bottom-up hierarchical** layout:
 
 ```
-        (arriba)   ● DSR·dN            esfera del grafo DSR compartido
-                   ⬭ agentes           concept agents (cognitive)  — ovalados
-                   ◆ IceStorm          broker de topics ICE
-                   ⬡ DDS·dN            broker de dominio DDS (hexágono naranja)
-                   ▢ componentes       sensorimotor con dependencias
-        (abajo)    ▢ bridge / fuentes  hubs que no consumen nada
+        (top)      ● DSR·dN            shared DSR graph sphere
+                   ⬭ agents            concept agents (cognitive) — ellipses
+                   ◆ IceStorm          ICE topic broker
+                   ⬡ DDS·dN            DDS domain broker (orange hexagon)
+                   ▢ components        sensorimotor components with dependencies
+        (bottom)   ▢ bridge / sources  hubs that consume nothing
 ```
 
-- **Nodos** — color por estado: `alive` verde · `up (ICE ✗)` amarillo · `stopped` rojo.
-  Formas: `box` componente · `ellipse` agente DSR · `dot` esfera DSR · `diamond` broker
-  IceStorm · `hexagon` broker DDS · `box` punteado = externo (no gestionado, p. ej.
-  `kinovaarm:12333`).
-- **Aristas**:
-  - **RPC** (línea sólida, `:puerto interfaz`): engrosa y se pone verde con tráfico (`KB/s`).
-  - **pub/sub ICE** (punteada morada): `pub`/`sub` + topic, vía IceStorm. Varios topics del
-    mismo par se agrupan en una sola arista multilínea.
-  - **DDS** (punteada naranja): componente → broker `DDS·dN`, uno o varios topics por
-    componente (p. ej. `RGBTopic`/`DepthTopic`). Engrosa y se pone verde con tráfico real
-    medido — ver la sección DDS.
-  - **DSR** (cian, sin flecha): agente ↔ grafo compartido (lectura/escritura).
-- **Tooltip** de cada nodo: qué implementa / requiere / publica / suscribe / DDS (dominio +
-  topics), y CPU/mem/estado.
-- **Botones de capa** (barra superior): `RPC` / `IceStorm` / `DDS` alternan la visibilidad de
-  cada grupo de aristas sin tocar el resto del grafo (útil para desatascar un grafo cargado).
-- Puedes **arrastrar** cualquier nodo con el ratón; al soltarlo queda libre permanentemente
-  (ya no vuelve a su banda de nivel), para poder recolocar manualmente sin pelearte con el
-  layout automático.
-- Botón **Vista**: cicla **Orgánico por nivel** (por defecto: force-directed con cada nodo
-  anclado a su banda de nivel) → **Jerárquico** → **Orgánico libre**. **Reorganizar**
-  re-acomoda; **Tabla** muestra/oculta el panel lateral. La física se congela tras
-  estabilizar, así que el mapa no se mueve con los refrescos de estado.
+- **Nodes** — colour by state: `alive` green · `up (ICE ✗)` yellow · `stopped` red. Shapes: `box` component ·
+  `ellipse` DSR agent · `dot` DSR sphere · `diamond` IceStorm broker · `hexagon` DDS broker · dashed `box` =
+  external (not managed, e.g. `kinovaarm:12333`).
+- **Edges**:
+  - **RPC** (solid line, `:port interface`): thickens and turns green with traffic (`KB/s`).
+  - **ICE pub/sub** (dotted purple): `pub`/`sub` + topic, through IceStorm. Several topics of the same pair are
+    grouped into one multi-line edge.
+  - **DDS** (dotted orange): component → `DDS·dN` broker, one or more topics per component (e.g.
+    `RGBTopic`/`DepthTopic`). Thickens and turns green with real measured traffic — see the DDS section.
+  - **DSR** (cyan, no arrow): agent ↔ shared graph (read/write).
+- **Tooltip** of each node: what it implements / requires / publishes / subscribes / DDS (domain + topics), and
+  CPU/mem/state.
+- **Layer buttons** (top bar): `RPC` / `IceStorm` / `DDS` toggle the visibility of each group of edges without
+  touching the rest of the graph (useful to untangle a busy graph).
+- You can **drag** any node with the mouse; once dropped it stays free for good (it no longer returns to its
+  level band), so you can place nodes by hand without fighting the automatic layout.
+- **View** button: cycles **Organic by level** (default: force-directed with each node anchored to its level band)
+  → **Hierarchical** → **Free organic**. **Re-layout** re-arranges; **Table** shows/hides the side panel. Physics
+  freezes once stable, so the map does not move with the state refreshes.
 
-### Live view (barra superior)
+### Live view (top bar)
 
-Botón **🎥 Live view** abre/cierra un panel flotante y redimensionable con un `<iframe>`
-apuntando a la URL que escribas en el campo de texto (se recuerda en `localStorage`). Pensado
-para la página HTML con reproductor embebido que sirve **mediamtx** en su puerto WebRTC
-(`http://<host>:8889/<path>`, p. ej. `.../theta` para Ricoh) — no necesita ninguna librería
-extra en el frontend, es solo un iframe genérico, así que también vale con una URL HLS o
-cualquier otra página de vídeo. Al cerrar el panel el iframe se pone a `about:blank` para no
-seguir decodificando/consumiendo ancho de banda en segundo plano.
+The **🎥 Live view** button opens/closes a floating, resizable panel with an `<iframe>` pointing at the URL typed
+in the text field (remembered in `localStorage`). It is meant for the HTML page with an embedded player that
+**mediamtx** serves on its WebRTC port (`http://<host>:8889/<path>`) — it needs no extra frontend library, it is
+just a generic iframe, so an HLS URL or any other video page works too. Closing the panel sets the iframe to
+`about:blank` so it stops decoding/consuming bandwidth in the background.
 
-### Control de procesos (panel Tabla)
+### Process control (Table panel)
 
-Cada fila de la tabla trae acciones sobre el componente:
+Each table row carries actions on its component:
 
-- **↻ relanzar** · **⏹ parar** · **📄 logs**.
-- Parar/relanzar se ejecutan de forma segura: el monitor **no** mata procesos ajenos; deja un
-  comando en `/tmp/robocomp_netmon/commands/` que **reclama y ejecuta el launcher dueño** del
-  proceso (el que lo lanzó). Solo se aceptan `stop`/`restart` sobre componentes conocidos.
-  Los procesos externos (Webots, rcnode, `dds_stats_bridge`) no son controlables desde la web.
-- **📄 logs** abre un panel inferior con el `tail` de `~/.local/logs/<name>.{err,out}`
-  (conmutable stdout/stderr), refrescado cada 1.5 s y con auto-scroll al final.
+- **↻ restart** · **⏹ stop** · **📄 logs**.
+- Stop/restart run safely: the monitor does **not** kill processes it does not own; it drops a command in
+  `/tmp/robocomp_netmon/commands/` that **the launcher owning** the process (the one that started it) claims and
+  executes. Only `stop`/`restart` on known components are accepted. External processes (Webots, rcnode,
+  `dds_stats_bridge`) cannot be controlled from the web.
+- **📄 logs** opens a bottom panel with the `tail` of `~/.local/logs/<name>.{err,out}` (stdout/stderr switchable),
+  refreshed every 1.5 s and auto-scrolled to the end.
 
 ---
 
-## Ancho de banda DDS real (`dds_stats_bridge`)
+## Real DDS bandwidth (`dds_stats_bridge`)
 
-Los componentes `*_dds` (p. ej. `ricoh_omni_dds`, `lidar3d_dds`) publican con
-`SharedMemoryOnly = true`: los datos van por memoria compartida entre procesos del mismo host,
-**nunca por la red** — el sniffing de `bandwidth.py` (raw socket en `lo`) es estructuralmente
-incapaz de verlos. Para medir ese tráfico se usa el **módulo de estadísticas nativo de Fast
-DDS**, que reporta el throughput real por *DataWriter* independientemente del transporte.
+The `*_dds` components (e.g. `lidar3d_dds`) publish with `SharedMemoryOnly = true`: the data travels through shared
+memory between processes on the same host, **never over the network** — `bandwidth.py`'s sniffing (raw socket on
+`lo`) structurally cannot see it. That traffic is measured with **Fast DDS's native statistics module**, which
+reports the real throughput per *DataWriter* regardless of the transport.
 
-### Cómo funciona
+### How it works
 
-1. `netmon/launcher.py` detecta, a partir del `[DDS]` **y** del `[Media]` de la config de cada
-   componente (parseado por `topology.component_dds`/`component_media`), cuáles publican o
-   consumen por DDS y con qué dominio. A esos procesos les inyecta la variable de entorno
+1. `netmon/launcher.py` finds, from the `[DDS]` **and** `[Media]` sections of each component's config (parsed by
+   `topology.component_dds`/`component_media`), which ones publish or consume through DDS and on which domain. It
+   injects the environment variable
    `FASTDDS_STATISTICS=_fastdds_statistics_publication_throughput;_fastdds_statistics_subscription_throughput`
-   al lanzarlos (y al relanzarlos desde la web) — sin tocar su código fuente. Esto hace que cada
-   uno publique, además de sus datos normales, su propio throughput de escritura *y de lectura*
-   (bytes/s instantáneos) en sendos topics internos reservados de Fast DDS — así que también
-   se obtiene ancho de banda real del lado **consumidor** (p. ej. `retina` suscrito al media
-   plane) sin instrumentar nada en el propio componente.
-2. Por cada dominio DDS detectado entre los componentes, el launcher arranca (de forma
-   idempotente, igual que Webots/rcnode) una instancia de `netmon/dds_stats_bridge/build/dds_stats_bridge --domain N --out /tmp/robocomp_netmon/dds_stats_dN.json`.
-   Este binario C++ standalone se suscribe a ambos topics de estadísticas, resuelve
-   GUID-de-writer/reader → nombre de topic real vía discovery normal de DDS, y vuelca a JSON
-   cada 1 s `{"<topic>": bytes_por_segundo, ...}` (escritura atómica). Si el mismo topic tiene
-   productor y consumidor activos a la vez, comparten una sola clave — no hay forma de
-   distinguir "publicado" de "recibido" en el JSON, ni de separar varios consumidores del mismo
-   topic entre sí (ambos son límites conocidos, no bugs; ver comentario en `main.cpp`).
-3. `netmon/server.py` fusiona todos los `dds_stats_d*.json` que encuentre y los expone como
-   `dds_bw` en `GET /api/state`.
-4. `app.js` suma el `dds_bw` de los topics de cada arista DDS del grafo y la anima igual que
-   las aristas RPC (grosor + verde con tráfico).
+   into those processes when starting them (and when restarting them from the web) — without touching their source
+   code. Each one then publishes, besides its normal data, its own write *and read* throughput (instantaneous
+   bytes/s) on two reserved internal Fast DDS topics — so the real bandwidth on the **consumer** side (e.g.
+   `retina` subscribed to the media plane) is obtained too, without instrumenting the component.
+2. For each DDS domain found among the components, the launcher starts (idempotently, like Webots/rcnode) an
+   instance of `netmon/dds_stats_bridge/build/dds_stats_bridge --domain N --out /tmp/robocomp_netmon/dds_stats_dN.json`.
+   This standalone C++ binary subscribes to both statistics topics, resolves writer/reader GUID → real topic name
+   through normal DDS discovery, and dumps `{"<topic>": bytes_per_second, ...}` to JSON every 1 s (atomic write).
+   If the same topic has a producer and a consumer active at once, they share a single key — the JSON cannot tell
+   "published" from "received", nor separate several consumers of the same topic (both are known limits, not
+   bugs; see the comment in `main.cpp`).
+3. `netmon/server.py` merges every `dds_stats_d*.json` it finds and exposes them as `dds_bw` in `GET /api/state`.
+4. `app.js` adds up the `dds_bw` of the topics of each DDS edge of the graph and animates it like the RPC edges
+   (thickness + green with traffic).
 
-### Construir el binario (una vez, en la máquina donde se vaya a lanzar)
+### Building the binary (once, on the machine where it will run)
 
 ```bash
 cd netmon/dds_stats_bridge
 mkdir -p build && cd build
-cmake .. && make -j$(nproc)
+cmake .. && make -j8
 ```
 
-Requiere Fast DDS instalado (`fastdds`/`fastcdr` vía `find_package`) **y** un checkout del
-código fuente de Fast-DDS que coincida con la versión instalada, porque el código generado a
-partir de `fastdds/statistics/types.idl` no se distribuye en los headers públicos — se toma
-directamente de `<checkout>/src/cpp/statistics/types/`. La ruta se configura con la variable
-CMake `FASTDDS_SRC_TREE` (por defecto `$HOME/software/Fast-DDS`).
+It needs Fast DDS installed (`fastdds`/`fastcdr` through `find_package`) **and** a checkout of the Fast-DDS source
+matching the installed version, because the code generated from `fastdds/statistics/types.idl` is not shipped in
+the public headers — it is taken directly from `<checkout>/src/cpp/statistics/types/`. The path is set with the CMake
+variable `FASTDDS_SRC_TREE` (default `$HOME/software/Fast-DDS`).
 
-Si el binario no existe en `dds_stats_bridge/build/`, el launcher lo detecta, avisa por consola
-(`dds_stats_bridge binary missing...`) y sigue funcionando con normalidad — simplemente sin
-ancho de banda DDS (el resto del mapa no se ve afectado).
+If the binary is missing from `dds_stats_bridge/build/`, the launcher detects it, warns on the console
+(`dds_stats_bridge binary missing...`) and keeps working normally — just without DDS bandwidth (the rest of the map
+is unaffected).
 
-### Notas / limitaciones
+### Notes / limitations
 
-- Un componente sin `[DDS] Domain = N` ni `[Media] domain_id = N` en su config simplemente no
-  participa (no se le inyecta la variable de entorno ni cuenta para decidir qué dominios
-  necesitan bridge).
-- Un componente puede tener varios topics DDS (`RGBTopic`/`DepthTopic`, etc.) — cualquier clave
-  de `[DDS]` que termine en `Topic`, o de `[Media]` que termine en `_topic`, cuenta.
-- Un consumidor del media plane que resuelve su dominio/topic **en runtime** vía el grafo DSR
-  en vez de declararlo en su `etc/*.toml` (p. ej. `room_concept`, ver `topology.py`) no tiene
-  `[Media] domain_id` estático que leer — no se le inyecta la variable de entorno ni aparece
-  como arista en el grafo. Esto es un límite de "leer configs en frío", no algo que el bridge
-  pueda arreglar por su cuenta.
-- No hay throughput hasta que el *DataWriter* real escribe al menos una muestra: si el
-  componente aún no está publicando (p. ej. esperando a que conecte la cámara física), su topic
-  simplemente no aparece en `dds_bw` — no es un fallo del bridge.
-- El valor es **instantáneo** (bytes desde la última muestra de ese writer / tiempo transcurrido),
-  no una media suavizada — puede oscilar entre lecturas de 1 s.
+- A component with neither `[DDS] Domain = N` nor `[Media] domain_id = N` in its config simply does not take part
+  (it gets no environment variable and does not count when deciding which domains need a bridge).
+- A component can have several DDS topics (`RGBTopic`/`DepthTopic`, etc.) — any `[DDS]` key ending in `Topic`, or
+  `[Media]` key ending in `_topic`, counts.
+- A media-plane consumer that resolves its domain/topic **at runtime** through the DSR graph instead of declaring it
+  in its `etc/*.toml` (see `topology.py`) has no static `[Media] domain_id` to read — it gets no environment
+  variable and does not show as an edge in the graph. This is a limit of "reading configs cold", not something the
+  bridge can fix on its own.
+- There is no throughput until the real *DataWriter* writes at least one sample: if the component is not publishing
+  yet (e.g. waiting for a physical camera), its topic simply does not appear in `dds_bw` — not a bridge failure.
+- The value is **instantaneous** (bytes since that writer's last sample / elapsed time), not a smoothed average —
+  it can oscillate between 1 s readings.
 
 ---
 
-## Configuración
+## Configuration
 
-Los launchers leen un TOML con la lista de componentes:
+The launchers read a TOML with the list of components:
 
 ```toml
 [general]
@@ -228,53 +210,50 @@ start_rcnode = true
 
 [[components]]
 name     = "bridge"
-cwd      = "~/robocomp/components/webots-bridge"
-cmd      = "bin/Webots2Robocomp etc/config"
-ice_name = "webots2robocomp:tcp -h localhost -p 10006"   # opcional: proxy para el ping de estado
+cwd      = "~/robocomp/AiGB_UEx_Navigation/webots-bridge"
+cmd      = "bin/Webots2Robocomp etc/config_husky"
+ice_name = "webots2robocomp:tcp -h localhost -p 10006"   # optional: proxy for the state ping
 ```
 
-- `ice_name` sirve **solo** para el ping de estado del launcher. La **topología del mapa NO
-  se deriva de aquí**, sino de los `etc/config` reales de cada componente
-  (`Endpoints.*` = implementa, `Proxies.*` = requiere, `*Prefix`/`*Topic` = pub/sub ICE,
-  `[DDS] Domain`/`*Topic` = pub DDS).
-- Los **identities ICE van en minúscula** (`lidar3d`, `camera360rgb`, `webots2robocomp`);
-  el ping es case-sensitive. El puerto es el del `Endpoints.<Iface>` del servidor.
-- Publishers sin endpoint RPC (p. ej. `python_xbox_controller`) van con `ice_name = ""`.
-- **Agentes cognitivos**: se agrupan en una esfera `DSR·dN` por su `[Agent] domain` del
-  `config.toml`. Varios domains ⇒ varias esferas.
+- `ice_name` is used **only** for the launcher's state ping. The **map topology is NOT derived from it**, but from
+  each component's real `etc/config` (`Endpoints.*` = implements, `Proxies.*` = requires, `*Prefix`/`*Topic` = ICE
+  pub/sub, `[DDS] Domain`/`*Topic` = DDS pub).
+- **ICE identities are lowercase** (`lidar3d`, `webots2robocomp`); the ping is case-sensitive. The port is the one of
+  the server's `Endpoints.<Iface>`.
+- Publishers without an RPC endpoint (e.g. `python_xbox_controller`) use `ice_name = ""`.
+- **Cognitive agents** are grouped into a `DSR·dN` sphere by the `[Agent] domain` of their `config.toml`. Several
+  domains ⇒ several spheres.
 
 ---
 
-## Ficheros
+## Files
 
-| Archivo | Rol |
-|---------|-----|
-| `subcognitive.py`, `cognitive.py` | wrappers finos (raíz del proyecto `utils/`) |
-| `netmon/launcher.py` | lanzar + colector + registro + toma del rol de monitor + Webots/rcnode/dds_stats_bridge |
-| `netmon/registry.py` | registro `/tmp` compartido + lock del monitor |
-| `netmon/topology.py` | grafo desde los configs (RPC, pub/sub ICE, DDS, esferas DSR) |
-| `netmon/bandwidth.py` | captura loopback ICE (raw AF_PACKET) + atribución por conexión |
-| `netmon/server.py` | servidor web (http.server) + API JSON (incluye `dds_bw`) |
-| `netmon/static/` | frontend vis-network (`index.html`, `app.js`) |
-| `netmon/dds_stats_bridge/` | binario C++ standalone: estadísticas reales de Fast DDS → JSON |
+| File | Role |
+|------|------|
+| `subcognitive.py`, `cognitive.py` | thin wrappers (in `utils/`) |
+| `netmon/launcher.py` | launch + collector + registry + monitor-role takeover + Webots/rcnode/dds_stats_bridge |
+| `netmon/registry.py` | shared `/tmp` registry + monitor lock |
+| `netmon/topology.py` | graph from the configs (RPC, ICE pub/sub, DDS, DSR spheres) |
+| `netmon/bandwidth.py` | ICE loopback capture (raw AF_PACKET) + per-connection attribution |
+| `netmon/server.py` | web server (http.server) + JSON API (including `dds_bw`) |
+| `netmon/static/` | vis-network frontend (`index.html`, `app.js`) |
+| `netmon/dds_stats_bridge/` | standalone C++ binary: real Fast DDS statistics → JSON |
 
-API: `GET /api/topology` (grafo estático) · `GET /api/state` (estado + `edges_bw` + `dds_bw`,
-1×/s) · `GET /api/logs?name=&stream=&lines=` · `POST /api/action` (`{action, name}`).
+API: `GET /api/topology` (static graph) · `GET /api/state` (state + `edges_bw` + `dds_bw`, 1×/s) ·
+`GET /api/logs?name=&stream=&lines=` · `POST /api/action` (`{action, name}`).
 
 ---
 
-## Problemas frecuentes
+## Common problems
 
-- **Todo sale `Up (ICE ✗)` amarillo** → el proceso vive pero el ping ICE falla: revisa que
-  el `ice_name` del TOML (identity minúscula + puerto de `Endpoints.<Iface>`) coincida con
-  el `etc/config` real del componente.
-- **Un componente sale `Stopped`** → murió por su cuenta (mira `~/.local/logs/<name>.err`);
-  típico: hardware ausente (cámara, `/dev/input/js0`) o puerto ya ocupado por una instancia vieja.
-- **`bw: sin permisos de captura`** → aplica el `setcap` de arriba (solo afecta a ICE, no a DDS).
-- **La web no aparece** → comprueba que ningún proceso viejo ocupa el puerto; el lock vivo
-  está en `/tmp/robocomp_netmon/monitor.lock`.
-- **No sale ancho de banda en una arista DDS** → o el binario `dds_stats_bridge` no está
-  compilado (revisa la consola del launcher al arrancar), o el componente aún no ha publicado
-  ninguna muestra real (p. ej. cámara sin conectar), o su config nunca activó DDS de verdad
-  (revisa `~/.local/logs/<name>.out` en busca de `PublishDDS not found, using default false` o
-  similar — es un problema de la config del propio componente, no del bridge).
+- **Everything shows `Up (ICE ✗)` in yellow** → the process is alive but the ICE ping fails: check that the TOML's
+  `ice_name` (lowercase identity + port of `Endpoints.<Iface>`) matches the component's real `etc/config`.
+- **A component shows `Stopped`** → it died on its own (see `~/.local/logs/<name>.err`); typically missing hardware
+  (camera, `/dev/input/js0`) or a port still held by an old instance.
+- **`bw: no capture permission`** → apply the `setcap` above (it only affects ICE, not DDS).
+- **The web does not show up** → check that no old process holds the port; the live lock is in
+  `/tmp/robocomp_netmon/monitor.lock`.
+- **No bandwidth on a DDS edge** → either the `dds_stats_bridge` binary is not built (check the launcher console at
+  start-up), or the component has not published any real sample yet (e.g. camera not connected), or its config
+  never actually enabled DDS (look in `~/.local/logs/<name>.out` for `PublishDDS not found, using default false` or
+  similar — a problem of the component's own config, not of the bridge).

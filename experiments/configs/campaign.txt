@@ -1,0 +1,21 @@
+# The runs behind results/ (EXP VARIANT SEED). ~2.5 h in total; E4 base doubles as the E3 and E5 base.
+E1 degraded 1
+E1 degraded 2
+E1 degraded 3
+E1 degraded 4
+E1 degraded 5
+E1 degraded 6
+E1 degraded 7
+E1 degraded 8
+E1 degraded 9
+E1 degraded 10
+E1 clean 1
+E1 clean 2
+E2 fusion 2
+E2 zed_only 2
+E4 base 1
+E4 base 2
+E4 base 3
+E3 no_lidar_confirm 1
+E3 no_pvis 1
+E5 slow_semantic 1

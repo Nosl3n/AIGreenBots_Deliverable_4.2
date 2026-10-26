@@ -1,87 +1,87 @@
-# AiGB_UEx_Navigation — navegación autónoma de un Husky A300 en un huerto de manzanos
+# AiGB_UEx_Navigation — autonomous navigation of a Husky A300 in an apple orchard
 
-Pila cognitiva para un robot agrícola **Clearpath Husky A300** simulado en **Webots**. El robot se localiza con
-GNSS, IMU y odometría; construye un mapa semántico del huerto (troncos, follaje, obstáculos no modelados);
-detecta y sigue a los trabajadores con la cámara estéreo ZED y el LiDAR; y navega de forma autónoma por los
-pasillos entre las hileras de árboles.
+Cognitive stack for a **Clearpath Husky A300** agricultural robot simulated in **Webots**. The robot localizes
+itself with GNSS, IMU and wheel odometry; builds a semantic map of the orchard (trunks, foliage, unmodelled
+obstacles); detects and tracks the workers with the ZED stereo camera and the LiDAR; and navigates autonomously
+along the corridors between the tree rows.
 
-Está construida sobre **RoboComp** y el grafo compartido **DSR** (cortex): cada concepto del mundo (el robot, el
-campo, los troncos, la vegetación, las personas, lo que ningún concepto explica) lo mantiene un agente
-independiente que lo publica en el grafo, y la navegación lee el grafo resultante.
+It is built on **RoboComp** and the shared **DSR** graph (cortex): every concept of the world (the robot, the
+field, the trunks, the vegetation, the people, whatever no concept explains) is maintained by an independent agent
+that publishes it in the graph, and navigation reads the resulting graph.
 
-![El Husky navegando por el huerto de manzanos en Webots](experiments/imagenes/01_simulador_webots_navegando.png)
+![The Husky navigating the apple orchard in Webots](experiments/images/01_webots_simulator_navigating.png)
 
-| Percepción (ZED + YOLO26) | Mapa del controller durante la navegación |
+| Perception (ZED + YOLO26) | Controller map while navigating |
 |---|---|
-| ![Segmentación de la ZED](experiments/imagenes/02_zed_yolo_segmentacion.png) | ![Mapa del controller](experiments/imagenes/03_controller_mapa_navegando.png) |
+| ![ZED segmentation](experiments/images/02_zed_yolo_segmentation.png) | ![Controller map](experiments/images/03_controller_map_navigating.png) |
 
-**Estado:** localización, mapa de troncos, seguimiento de personas y navegación autónoma funcionan en simulación.
-Los resultados de la campaña de experimentos están en [`experiments/`](experiments/README.md).
+**Status:** localization, trunk mapping, people tracking and autonomous navigation work in simulation. The results
+of the experiment campaign are in [`experiments/`](experiments/README.md).
 
-## Cómo funciona
+## How it works
 
 ```
  Webots (husky_apple.wbt)
-   │  webots-bridge: base skid-steer, GPS, IMU, ZED, LiDAR helios (Ice + DDS)
+   │  webots-bridge: skid-steer base, GPS, IMU, ZED, helios LiDAR (Ice + DDS)
    ▼
- Capa sensoriomotora ── lidar3d_dds (helios) · zed_camera · imu_dds
+ Sensorimotor layer ── lidar3d_dds (helios) · zed_camera · imu_dds
    │
    ▼
- Grafo DSR compartido ◄──► agentes de la capa cognitiva
-   robot_concept        cuerpo del robot y sus sensores (husky.json)
-   openfield_concept    localización: EKF con GNSS + IMU + ruedas → nodo field (marco ENU del campo)
-   retina               YOLO26 sobre la ZED: personas (segmentación y pose) y vegetación (ADE20K)
-   human_concept        personas: esqueleto 3D y seguimiento con la ZED y el LiDAR
-   vegetation_concept   follaje (copas) → qué tapa qué
-   trunk_concept        troncos: banda baja de la clase "tree" confirmada por el LiDAR
-   residual_concept     rejilla de ocupación de lo que ningún concepto explica
-   controller           planificador y control de la base
+ Shared DSR graph ◄──► cognitive-layer agents
+   robot_concept        the robot's body and sensors (husky.json)
+   openfield_concept    localization: EKF with GNSS + IMU + wheels → field node (ENU field frame)
+   retina               YOLO26 on the ZED: people (segmentation and pose) and vegetation (ADE20K)
+   human_concept        people: 3D skeleton and tracking with the ZED and the LiDAR
+   vegetation_concept   foliage (canopies) → what occludes what
+   trunk_concept        trunks: low band of the "tree" class confirmed by the LiDAR
+   residual_concept     occupancy grid of whatever no concept explains
+   controller           planner and base control
 ```
 
-| Componente | Qué hace |
+| Component | What it does |
 |---|---|
-| `webots-agri/` | Robot (`HuskyA300.proto`), manzano procedural (`AppleTree.proto`), suelo labrado, mundo `husky_apple.wbt` y generador de hileras |
-| `webots-bridge/` | Puente Webots → RoboComp: base skid-steer, GPS (WGS84 → marco local), sensores y, opcionalmente, la degradación GNSS de los experimentos |
-| `robocomp-robolab/` | Drivers de sensores: `lidar3d_dds` (helios), `zed_camera`, `imu_dds`, mando Xbox |
-| `active_inference/` | Agentes cognitivos DSR (lista de arriba), módulos compartidos (`common/`) y lanzadores (`utils/`). `row_metaconcept` (hileras) existe pero está desactivado |
-| `experiments/` | Campaña de experimentos E1–E5: orquestador, configuración modular de variantes, análisis e informes |
+| `webots-agri/` | Robot (`HuskyA300.proto`), procedural apple tree (`AppleTree.proto`), tilled ground, the `husky_apple.wbt` world and the row generator |
+| `webots-bridge/` | Webots → RoboComp bridge: skid-steer base, GPS (WGS84 → local frame), sensors and, optionally, the GNSS degradation used by the experiments |
+| `robocomp-robolab/` | Sensor drivers: `lidar3d_dds` (helios), `zed_camera`, `imu_dds`, Xbox gamepad |
+| `active_inference/` | DSR cognitive agents (listed above), shared modules (`common/`) and launchers (`utils/`). `row_metaconcept` (tree rows) exists but is disabled |
+| `experiments/` | E1–E5 experiment campaign: orchestrator, modular variant configuration, analyses and reports |
 
-## 1. Instalación básica (fuera de este repositorio)
+## 1. Base installation (outside this repository)
 
-Probado en **Ubuntu 24.04** con GPU NVIDIA.
+Tested on **Ubuntu 24.04** with an NVIDIA GPU.
 
-1. **RoboComp** — <https://github.com/robocomp/robocomp>. Sigue su guía de instalación (instala también ZeroC
-   Ice, que usa RoboComp para comunicar componentes). Debe quedar en `~/robocomp`, con `core`, `interfaces`,
-   `tools` y `cmake`.
-2. **cortex (grafo DSR)** — <https://github.com/robocomp/cortex> (rama `development`). Instálalo en `/usr/local`
-   con sus dependencias (Fast-DDS y Fast-CDR de eProsima, Qt6, Eigen, cppitertools, libQGLViewer), y el módulo de
-   Python `pydsr`. Este proyecto necesita además el tipo de nodo **`field`**: añade `REGISTER_NODE_TYPE(field)` en
-   `core/include/dsr/core/types/type_checking/dsr_node_type.h` y reinstala cortex.
-3. **Webots R2025a** — <https://cyberbotics.com> (o <https://github.com/cyberbotics/webots/releases>), instalado en
-   `/usr/local/webots`. La primera vez necesita red para descargar algunos PROTO.
-4. **ONNX Runtime 1.30 con CUDA** — <https://github.com/microsoft/onnxruntime/releases>, descomprimido en
+1. **RoboComp** — <https://github.com/robocomp/robocomp>. Follow its installation guide (it also installs ZeroC
+   Ice, which RoboComp uses between components). It must end up in `~/robocomp`, with `core`, `interfaces`, `tools`
+   and `cmake`.
+2. **cortex (DSR graph)** — <https://github.com/robocomp/cortex> (`development` branch). Install it in `/usr/local`
+   with its dependencies (eProsima Fast-DDS and Fast-CDR, Qt6, Eigen, cppitertools, libQGLViewer) and the `pydsr`
+   Python module. This project also needs the **`field`** node type: add `REGISTER_NODE_TYPE(field)` to
+   `core/include/dsr/core/types/type_checking/dsr_node_type.h` and reinstall cortex.
+3. **Webots R2025a** — <https://cyberbotics.com> (or <https://github.com/cyberbotics/webots/releases>), installed in
+   `/usr/local/webots`. The first start needs network access to download some PROTOs.
+4. **ONNX Runtime 1.30 with CUDA** — <https://github.com/microsoft/onnxruntime/releases>, unpacked in
    `/opt/onnxruntime`.
-5. **TensorRT 10** (opcional, recomendado: ~4× más rápido que CUDA). Tiene que ser la versión 10, la que espera
-   ONNX Runtime 1.30:
+5. **TensorRT 10** (optional, recommended: ~4× faster than CUDA). It must be version 10, the one ONNX Runtime 1.30
+   expects:
 
    ```bash
    sudo apt install libnvinfer10=10.16.1.11-1+cuda13.2 libnvinfer-plugin10=10.16.1.11-1+cuda13.2 libnvonnxparsers10=10.16.1.11-1+cuda13.2
    sudo apt-mark hold libnvinfer10 libnvinfer-plugin10 libnvonnxparsers10
    ```
 
-6. **Otras librerías** (apt): Embree, TBB, Qt6, Eigen, tomlplusplus. Para los experimentos, Python con `numpy`,
-   `pandas`, `scipy`, `matplotlib` y `python-xlib`.
+6. **Other libraries** (apt): Embree, TBB, Qt6, Eigen, tomlplusplus. For the experiments, Python with `numpy`,
+   `pandas`, `scipy`, `matplotlib` and `python-xlib`.
 
-## 2. Este repositorio
+## 2. This repository
 
 ```bash
 cd ~/robocomp
-git clone https://github.com/Nosl3n/AiGB_UEx_Navigation.git      # debe quedar en ~/robocomp/AiGB_UEx_Navigation
+git clone https://github.com/Nosl3n/AiGB_UEx_Navigation.git      # must end up in ~/robocomp/AiGB_UEx_Navigation
 ```
 
-Los lanzadores usan esa ruta.
+The launchers use that path.
 
-**Modelos de `retina`** (no se versionan). Se exportan de los pesos oficiales de Ultralytics y se dejan en
+**`retina` models** (not versioned). Export them from the official Ultralytics weights and place them in
 `active_inference/retina/models/yolo26/`:
 
 ```bash
@@ -91,57 +91,57 @@ for m in yolo26x-seg yolo26x-pose yolo26x-sem-ade20k; do
 done
 ```
 
-| Modelo | Uso |
+| Model | Use |
 |---|---|
-| `yolo26x-seg` | máscaras de personas → `human_concept` |
-| `yolo26x-pose` | esqueletos 3D de personas → `human_concept` |
-| `yolo26x-sem-ade20k` | segmentación semántica de vegetación → `trunk_concept`, `vegetation_concept` |
+| `yolo26x-seg` | person masks → `human_concept` |
+| `yolo26x-pose` | 3D person skeletons → `human_concept` |
+| `yolo26x-sem-ade20k` | semantic segmentation of vegetation → `trunk_concept`, `vegetation_concept` |
 
-En el primer arranque, TensorRT construye sus engines (1–2 min) en `active_inference/retina/.trt_cache/`.
+On the first start TensorRT builds its engines (1–2 min) in `active_inference/retina/.trt_cache/`.
 
-**Compilar.** Cada componente se compila en su carpeta, con **`-j8` como máximo** (con más hilos la compilación
-puede agotar la memoria):
+**Build.** Each component is built in its own folder, with **at most `-j8`** (more threads can exhaust the
+memory):
 
 ```bash
 cmake -B build && make -C build -j8
 ```
 
-Componentes: `webots-bridge`;
+Components: `webots-bridge`;
 `robocomp-robolab/components/hardware/{laser/lidar3d_dds,camera/zed_camera,imu/imu_dds}`;
 `active_inference/{robot_concept,openfield_concept,residual_concept,controller,retina,human_concept,vegetation_concept,trunk_concept}`.
 
-## 3. Lanzar
+## 3. Run
 
 ```bash
-./apple.bash            # Webots con husky_apple.wbt + capa sensoriomotora + capa cognitiva
-./apple.bash --route    # ... y además recorre una ruta fija por los pasillos
-./apple.bash --stop     # para todo en orden: capa cognitiva, capa sensoriomotora y Webots
+./apple.bash            # Webots with husky_apple.wbt + sensorimotor layer + cognitive layer
+./apple.bash --route    # ... and also drives a fixed route along the corridors
+./apple.bash --stop     # stops everything in order: cognitive layer, sensorimotor layer and Webots
 ```
 
-- **Objetivo de navegación:** clic en la vista 2D del controller (pulsar *Run*), o
-  `python3 active_inference/utils/send_goal.py X Y` (metros en el marco del campo: x este, y norte).
-- **Mando Xbox:** avance con el stick izquierdo, giro con el derecho.
-- **Monitor web** del estado de los agentes: <http://127.0.0.1:8080>.
-- Arranque por capas y detalles de los lanzadores: [`active_inference/utils/README.md`](active_inference/utils/README.md).
+- **Navigation goal:** click on the controller's 2D view (press *Run*), or
+  `python3 active_inference/utils/send_goal.py X Y` (metres in the field frame: x east, y north).
+- **Xbox gamepad:** forward with the left stick, turn with the right one.
+- **Web monitor** of the agents' state: <http://127.0.0.1:8080>.
+- Layer-by-layer start-up and launcher details: [`active_inference/utils/README.md`](active_inference/utils/README.md).
 
-## 4. El robot y el huerto
+## 4. The robot and the orchard
 
-- **Husky A300:** 4 ruedas skid-steer; LiDAR 3D `helios` (50 capas, 110° vertical, 30 m); cámara estéreo ZED;
-  IMU; GNSS en WGS84 con referencia junto al campus de la Universidad de Extremadura en Badajoz.
-- **Huerto:** 5 hileras × 12 manzanos en eje central (1,3–3,2 m de alto, las copas por encima de la antena
-  GNSS), pasillos de 2,5 m, suelo labrado con caballones. Dos trabajadores caminan por el huerto.
-- **Marco del mundo:** nodo `field` del grafo (ENU), creado por `openfield_concept`.
+- **Husky A300:** 4 skid-steer wheels; 3D LiDAR `helios` (50 layers, 110° vertical, 30 m); ZED stereo camera; IMU;
+  GNSS in WGS84 referenced next to the University of Extremadura campus in Badajoz.
+- **Orchard:** 5 rows × 12 tall-spindle apple trees (1.3–3.2 m tall, canopies above the GNSS antenna), 2.5 m
+  corridors, tilled ground with raised beds. Two workers walk through the orchard.
+- **World frame:** the graph's `field` node (ENU), created by `openfield_concept`.
 
-## 5. Experimentos
+## 5. Experiments
 
-[`experiments/`](experiments/README.md) contiene la campaña E1–E5 (localización con GNSS degradado, seguimiento
-de personas, mapa de troncos, navegación integrada y rendimiento), con un orquestador que activa o desactiva cada
-caso (degradación GNSS, ablaciones, modalidades de sensor) cambiando una clave de configuración, sin tocar las
-configuraciones del repositorio. Resumen de resultados: [`experiments/resultados/RESUMEN.md`](experiments/resultados/RESUMEN.md).
+[`experiments/`](experiments/README.md) holds the E1–E5 campaign (localization with degraded GNSS, people tracking,
+trunk map, integrated navigation and performance), with an orchestrator that switches every case on or off
+(GNSS degradation, ablations, sensor modalities) by changing one configuration key, without touching the repository
+configs. Results summary: [`experiments/results/SUMMARY.md`](experiments/results/SUMMARY.md).
 
-## Origen y licencia
+## Origin and license
 
-El código parte de `robocomp/active_inference` (`main` @ `5dc985e`), `robocomp/webots-bridge` (`main` @ `486e233`)
-y `robocomp/robocomp-robolab` (`master` @ `1cc4825`), de RoboLab (Universidad de Extremadura), de los que se
-conservan los componentes que usa el Husky. Se distribuye bajo la licencia **GPL-3.0**, como el código del que
-parte ([`LICENSE`](LICENSE)).
+The code starts from `robocomp/active_inference` (`main` @ `5dc985e`), `robocomp/webots-bridge` (`main` @ `486e233`)
+and `robocomp/robocomp-robolab` (`master` @ `1cc4825`), by RoboLab (University of Extremadura), keeping the
+components the Husky uses. It is distributed under the **GPL-3.0** license, like the code it starts from
+([`LICENSE`](LICENSE)).
