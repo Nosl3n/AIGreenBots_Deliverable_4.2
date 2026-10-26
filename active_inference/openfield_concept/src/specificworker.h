@@ -28,6 +28,7 @@
 #include <genericworker.h>
 
 #include "openfield_ekf.h"
+#include "openfield_variants.h"
 #include "openfield_scene_graph.h"
 #include "openfield_viewer.h"
 
@@ -84,6 +85,12 @@ private:
 		std::string imu_node = "imu";
 		std::string csv_path = "tmp/openfield_pose.csv";
 		bool viewer = true;                        // Viewer.Enabled: the localization window
+		// GPS fusion model of the PUBLISHED filter ([Ekf] GpsSigmaSource / GpsLikelihood / StudentNu /
+		// LagCompensation). Defaults = the filter as it always was. See openfield_variants.h.
+		rc::openfield::GpsModel gps_model;
+		std::string gps_status_file;               // [Gps] StatusFile: the receiver's report (bridge, simulation)
+		bool shadow_filters = false;               // [Experiment] ShadowFilters: E1's A/B/C/D side by side
+		std::string exp_csv_path;                  // [Diag] ExperimentCsv: 10 Hz, every filter + GT + receiver
 	} cfg_;
 	void load_config();
 
@@ -127,6 +134,17 @@ private:
 	std::int64_t last_gps_new_ms_ = 0;         // wall ms of the last NEW fix
 	double last_gps_innovation_m_ = 0.0;
 	void poll_gps();
+	// Receiver status file ([Gps] StatusFile): one line per fix, replaced atomically by the bridge.
+	std::uint64_t last_status_seq_ = 0;
+	rc::openfield::GpsFix last_fix_;
+	bool read_status_fix(rc::openfield::GpsFix &fix);
+	rc::openfield::AntennaHistory main_antenna_;
+	rc::openfield::GpsDiag main_diag_;
+	// E1 shadow filters and their log.
+	std::vector<rc::openfield::Shadow> shadows_;
+	std::ofstream exp_csv_;
+	std::int64_t last_exp_row_ms_ = 0;
+	void write_experiment_row();
 
 	// ── Sensor switches (the window): take the GPS / the IMU's absolute yaw out of the filter ─────
 	bool gps_enabled_ = true;

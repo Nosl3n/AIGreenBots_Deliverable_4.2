@@ -1,10 +1,9 @@
-# Sensorimotor layer for the Husky A300 in the agricultural worlds (plan.md, F2).
+# Sensorimotor layer for the Husky A300 in the apple orchard.
 #   python3 subcognitive.py sub_husky.toml
-# The launcher starts Webots with no world argument: open webots-agri/worlds/husky_field.wbt (tilled
-# ground, raised beds) or husky_test.wbt (flat) in it. The robot's DEF must be "husky" (bridge Robot.Def).
+# The launcher starts Webots with no world argument: open webots-agri/worlds/husky_apple.wbt in it
+# (../../apple.bash does it for you). The robot's DEF must be "husky" (bridge Robot.Def).
 #
-# Same components as sub_shadow.toml minus the Shadow-only ones (Ricoh 360 camera, bpearl): the
-# Husky carries the helios, the ZED, the IMU and, new, a GPS served by the bridge itself
+# The Husky carries the helios LiDAR, the ZED, the IMU and a GPS served by the bridge itself
 # (Endpoints.GPS = 10009, interface RoboCompGPS).
 #
 # Every cwd points INSIDE this repo (~/robocomp/AiGB_UEx_Navigation), not to ~/robocomp/components

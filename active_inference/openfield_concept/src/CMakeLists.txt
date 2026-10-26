@@ -12,6 +12,7 @@ LIST(APPEND LIBS
 LIST(APPEND SOURCES
   ../src/specificworker.cpp
   ../src/openfield_ekf.cpp
+  ../src/openfield_variants.cpp
   ../src/openfield_scene_graph.cpp
   ../src/openfield_viewer.cpp
 )

@@ -42,6 +42,7 @@
 #include <webots/Accelerometer.hpp>
 #include <webots/Gyro.hpp>
 #include <webots/GPS.hpp>
+#include "gnss_degradation.h"
 #include <webots/InertialUnit.hpp>
 #include <webots/Compass.hpp>
 #include <Eigen/Dense>
@@ -343,6 +344,21 @@ private:
     int    gps_period_ms_ = 100;            // 10 Hz, a typical RTK receiver rate
     double nominal_orient_var_ = 4e-6;      // rad^2, (0.002 rad)^2 -- matches the proto's noise
     void init_gps_reference();
+    // ── SIMULATION-ONLY GNSS degradation ([GnssDegradation], src/gnss_degradation.h; OFF by default) ─────────
+    // With Enabled the fix served on GPS.getPos() is the degraded one (canopy blockage, RTK fixed/float/single,
+    // multipath, declared zones, outages, latency). StatusFile (any setting of Enabled) also writes, per fix,
+    // what a receiver reports beside it — sigma, fix type, satellites, measurement time — for consumers that
+    // model the receiver (openfield_concept Gps.StatusFile). Empty = no file.
+    gnss::Degrader gnss_;
+    bool gnss_enabled_ = false;
+    std::string gnss_status_path_;
+    double gnss_clean_sigma_ = 0.02;          // reported sigma when degradation is OFF (the proto's gpsAccuracy)
+    std::int64_t gnss_last_epoch_ms_ = -1;
+    std::uint64_t gnss_seq_ = 0;
+    std::uint64_t gnss_epochs_ = 0, gnss_epochs_by_type_[6] = {0, 0, 0, 0, 0, 0};
+    void load_gnss_config();
+    void init_gnss_canopy();
+    void write_gnss_status(const gnss::Fix& f, std::int64_t deliver_ms);
     void update_gps_data();
     static void wgs84_to_utm(double lat_deg, double lon_deg, int force_zone,
                              int &zone, char &band, double &east, double &north);

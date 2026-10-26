@@ -27,6 +27,8 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <algorithm>
+#include <charconv>
+#include <fstream>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -119,11 +121,31 @@ void SpecificWorker::load_config()
 	opt("Imu.Node", cfg_.imu_node);
 	opt("Gps.PollPeriodMs", cfg_.gps_poll_period_ms);
 	opt("Diag.CsvPath", cfg_.csv_path);
+	opt("Diag.ExperimentCsv", cfg_.exp_csv_path);
+	opt("Gps.StatusFile", cfg_.gps_status_file);
+	opt("Experiment.ShadowFilters", cfg_.shadow_filters);
+	{
+		std::string src = "fixed", lik = "gauss";
+		opt("Ekf.GpsSigmaSource", src);
+		opt("Ekf.GpsLikelihood", lik);
+		opt("Ekf.StudentNu", cfg_.gps_model.nu);
+		opt("Ekf.LagCompensation", cfg_.gps_model.lag_comp);
+		cfg_.gps_model.receiver_sigma = src == "receiver";
+		cfg_.gps_model.student = lik == "student";
+	}
+	if (cfg_.shadow_filters)
+		shadows_ = rc::openfield::make_shadows(e, cfg_.gps_model.nu);
 	opt("Viewer.Enabled", cfg_.viewer);
 
 	std::println("[openfield] EKF: gps sigma {} m, yaw sigma {} rad, lever ({}, {}) m | IMU yaw {} every {} ms",
 	             e.gps_sigma_m, e.yaw_sigma_rad, e.gps_lever.x(), e.gps_lever.y(),
 	             cfg_.use_imu_yaw ? "ON" : "OFF", cfg_.yaw_update_period_ms);
+	std::println("[openfield] GPS fusion: sigma {}, likelihood {}{}, latency compensation {} | receiver status {} | "
+	             "shadow filters {}",
+	             cfg_.gps_model.receiver_sigma ? "from the receiver" : "fixed", cfg_.gps_model.student ? "Student-t nu=" : "Gaussian",
+	             cfg_.gps_model.student ? std::format("{}", cfg_.gps_model.nu) : std::string(),
+	             cfg_.gps_model.lag_comp ? "ON" : "OFF", cfg_.gps_status_file.empty() ? "none" : cfg_.gps_status_file,
+	             shadows_.empty() ? "OFF" : "A/B/C/D");
 }
 
 void SpecificWorker::initialize()
@@ -145,6 +167,20 @@ void SpecificWorker::initialize()
 	if (rc::diag::open_rotating(csv_, cfg_.csv_path,
 	        "wall_ms,x,y,theta,sx,sy,stheta,gps_fixes,gt_x,gt_y,gt_theta,err_xy,err_theta\n"))
 		csv_.imbue(std::locale::classic());
+	if (not cfg_.exp_csv_path.empty())
+	{
+		std::filesystem::create_directories(std::filesystem::path(cfg_.exp_csv_path).parent_path());
+		exp_csv_.open(cfg_.exp_csv_path, std::ios::out | std::ios::trunc);
+		exp_csv_.imbue(std::locale::classic());
+		exp_csv_ << "wall_ms,clock_ms,gt_stamp,gt_x,gt_y,gt_th";
+		std::vector<std::string> names{"main"};
+		for (const auto &sh : shadows_) names.push_back(sh.name);
+		for (const auto &n : names)
+			for (const auto *c : {"x", "y", "th", "pxx", "pxy", "pxt", "pyy", "pyt", "ptt"})
+				exp_csv_ << ',' << n << '_' << c;
+		exp_csv_ << ",fix_seq,fix_valid,fix_type,fix_sigma,fix_nvis,fix_err,fix_mp,fix_meas_ms,fix_deliver_ms"
+		            ",main_d2,main_w,B_d2,B_w,B_lag_ms,gps_enabled,fix_x,fix_y\n";
+	}
 
 	presence_protocol_.wire(
 		presence_coordinator_, &statemachine, this, configLoader, G, static_cast<std::uint32_t>(agent_id),
@@ -214,6 +250,7 @@ void SpecificWorker::compute()
 			publish_pose();
 	}
 	log_status();
+	write_experiment_row();
 	if (viewer_ and (compute_ticks_++ % 5) == 0)   // ~10 Hz at Period.Compute = 20 ms
 		push_viewer();
 	fps_.print("[openfield_concept Compute]");
@@ -252,7 +289,23 @@ void SpecificWorker::pump_imu()
 		if (clock <= last_imu_clock_ms_) return;        // duplicate / reordered sample
 		last_imu_recv_ms_ = QDateTime::currentMSecsSinceEpoch();
 		if (last_imu_clock_ms_ > 0 and ekf_.initialized())
-			ekf_.predict(1e-3 * static_cast<double>(clock - last_imu_clock_ms_), odom_adv_, odom_side_, f.gyro_z());
+		{
+			const double dt = 1e-3 * static_cast<double>(clock - last_imu_clock_ms_);
+			ekf_.predict(dt, odom_adv_, odom_side_, f.gyro_z());
+			for (auto &sh : shadows_)
+			{
+				sh.ekf.predict(dt, odom_adv_, odom_side_, f.gyro_z());
+				if (sh.use_yaw and cfg_.use_imu_yaw and clock - sh.last_yaw_clock_ms >= cfg_.yaw_update_period_ms)
+				{
+					sh.ekf.correct_yaw(f.yaw());
+					sh.last_yaw_clock_ms = clock;
+				}
+				sh.antenna.push(clock, sh.ekf.predicted_antenna());
+				sh.record(static_cast<std::int64_t>(f.stamp_ms()));
+			}
+		}
+		if (ekf_.initialized())
+			main_antenna_.push(clock, ekf_.predicted_antenna());
 		last_imu_clock_ms_ = clock;
 		last_imu_stamp_ms_ = static_cast<std::int64_t>(f.stamp_ms());
 		last_gyro_z_ = f.gyro_z();
@@ -300,21 +353,33 @@ void SpecificWorker::poll_gps()
 	if (now - last_gps_poll_ms_ < cfg_.gps_poll_period_ms) return;
 	last_gps_poll_ms_ = now;
 
-	float x = 0.f, y = 0.f, z = 0.f;
-	bool ok = false;
-	try { ok = gps_proxy->getPos(x, y, z); }
-	catch (const Ice::Exception &e)
+	rc::openfield::GpsFix fix;
+	if (not cfg_.gps_status_file.empty())
 	{
-		static std::int64_t last_warn = 0;
-		if (now - last_warn > 5000) { last_warn = now; qWarning() << "[openfield] GPS unreachable:" << e.what(); }
-		return;
+		// The receiver's own report (bridge [GnssDegradation] StatusFile): fix + sigma + type + measurement time.
+		if (not read_status_fix(fix)) return;
+		last_fix_ = fix;
+		if (not fix.valid) return;                        // the receiver says: no fix now
 	}
-	if (not ok) return;
-
-	const Eigen::Vector2d xy{x, y};
-	// The receiver refreshes at its own rate (bridge GPS.Period); a repeated value is the SAME fix read
-	// again, and folding it in twice would double-count its information.
-	if (last_gps_xy_.has_value() and (xy - *last_gps_xy_).norm() == 0.0) return;
+	else
+	{
+		float x = 0.f, y = 0.f, z = 0.f;
+		bool ok = false;
+		try { ok = gps_proxy->getPos(x, y, z); }
+		catch (const Ice::Exception &e)
+		{
+			static std::int64_t last_warn = 0;
+			if (now - last_warn > 5000) { last_warn = now; qWarning() << "[openfield] GPS unreachable:" << e.what(); }
+			return;
+		}
+		if (not ok) return;
+		fix.xy = {x, y};
+		// The receiver refreshes at its own rate (bridge GPS.Period); a repeated value is the SAME fix read
+		// again, and folding it in twice would double-count its information.
+		if (last_gps_xy_.has_value() and (fix.xy - *last_gps_xy_).norm() == 0.0) return;
+		last_fix_ = fix;
+	}
+	const Eigen::Vector2d xy = fix.xy;
 	last_gps_xy_ = xy;
 	++gps_fixes_;
 	last_gps_new_ms_ = now;
@@ -325,12 +390,102 @@ void SpecificWorker::poll_gps()
 		if (not last_imu_yaw_.has_value()) return;       // need a heading too
 		ekf_.initialize(xy, *last_imu_yaw_);
 		last_yaw_update_clock_ms_ = last_imu_clock_ms_;
-		std::println("[openfield] initialized from GPS ({:.3f}, {:.3f}) and IMU yaw {:.3f} rad", x, y, *last_imu_yaw_);
+		for (auto &sh : shadows_)
+		{
+			sh.ekf.initialize(xy, *last_imu_yaw_);
+			sh.last_yaw_clock_ms = last_imu_clock_ms_;
+		}
+		std::println("[openfield] initialized from GPS ({:.3f}, {:.3f}) and IMU yaw {:.3f} rad{}", xy.x(), xy.y(),
+		             *last_imu_yaw_, shadows_.empty() ? "" : " (and the A/B/C/D shadow filters)");
 		return;
 	}
 	last_gps_innovation_m_ = (xy - ekf_.predicted_antenna()).norm();
-	ekf_.correct_gps(xy);
+	main_diag_ = rc::openfield::fuse_gps(ekf_, cfg_.gps_model, fix, ekf_.params().gps_sigma_m, main_antenna_,
+	                                     last_imu_clock_ms_);
+	for (auto &sh : shadows_)
+		if (sh.use_gps)
+			sh.diag = rc::openfield::fuse_gps(sh.ekf, sh.gps, fix, sh.ekf.params().gps_sigma_m, sh.antenna,
+			                                  last_imu_clock_ms_);
 	++gps_fused_;
+}
+
+// One line "seq meas_ms deliver_ms valid x y z sigma fix_type n_vis n_partial n_above mp err" (bridge,
+// write_gnss_status). Parsed with from_chars: the C locale here may use a decimal COMMA (CLAUDE.md).
+bool SpecificWorker::read_status_fix(rc::openfield::GpsFix &fix)
+{
+	std::ifstream in(cfg_.gps_status_file);
+	std::string line;
+	if (not in or not std::getline(in, line)) return false;
+	std::vector<double> v;
+	const char *p = line.data(), *end = line.data() + line.size();
+	while (p < end)
+	{
+		while (p < end and *p == ' ') ++p;
+		if (p >= end) break;
+		double d = 0.0;
+		const auto r = std::from_chars(p, end, d);
+		if (r.ec != std::errc()) return false;
+		v.push_back(d);
+		p = r.ptr;
+	}
+	if (v.size() < 14) return false;
+	const auto seq = static_cast<std::uint64_t>(v[0]);
+	if (seq == last_status_seq_) return false;
+	last_status_seq_ = seq;
+	fix.seq = seq;
+	fix.meas_ms = static_cast<std::int64_t>(v[1]);
+	fix.deliver_ms = static_cast<std::int64_t>(v[2]);
+	fix.valid = v[3] > 0.5;
+	fix.xy = {v[4], v[5]};
+	fix.sigma = v[7];
+	fix.fix_type = static_cast<int>(v[8]);
+	fix.n_vis = static_cast<int>(v[9]);
+	fix.mp = v[12];
+	fix.err = v[13];
+	fix.has_status = true;
+	return true;
+}
+
+// ── E1 log: every filter at the ground truth's own stamp, 10 Hz ─────────────────────────────────────────────────
+void SpecificWorker::write_experiment_row()
+{
+	if (not exp_csv_.is_open() or not ekf_.initialized() or not scene_graph_) return;
+	const auto now = QDateTime::currentMSecsSinceEpoch();
+	if (now - last_exp_row_ms_ < 100) return;
+	last_exp_row_ms_ = now;
+	const auto rid = scene_graph_->robot_id();
+	if (rid == 0) return;
+	const auto n = G->get_node(rid);
+	if (not n.has_value()) return;
+	const auto ax = G->get_attrib_by_name<robot_gt_x_att>(n.value());
+	const auto ay = G->get_attrib_by_name<robot_gt_y_att>(n.value());
+	const auto aa = G->get_attrib_by_name<robot_gt_angle_att>(n.value());
+	const auto ats = G->get_attrib_by_name<robot_gt_timestamp_att>(n.value());
+	if (not (ax.has_value() and ay.has_value() and aa.has_value() and ats.has_value())) return;
+	const auto t = static_cast<std::int64_t>(ats.value());
+	const auto row = [&](const Eigen::Vector3d &x, const Eigen::Matrix3d &P)
+	{
+		exp_csv_ << ',' << x(0) << ',' << x(1) << ',' << x(2) << ',' << P(0, 0) << ',' << P(0, 1) << ',' << P(0, 2)
+		         << ',' << P(1, 1) << ',' << P(1, 2) << ',' << P(2, 2);
+	};
+	exp_csv_ << now << ',' << last_imu_clock_ms_ << ',' << t << ',' << ax.value() << ',' << ay.value() << ','
+	         << wrap_pi(-(aa.value() + M_PI_2));
+	const auto main_at = pose_at(t);
+	row(main_at.value_or(ekf_.state()), ekf_.covariance());
+	for (const auto &sh : shadows_)
+	{
+		const auto at = sh.at(t);
+		if (at.has_value()) row(at->first, at->second);
+		else row(sh.ekf.state(), sh.ekf.covariance());
+	}
+	const auto &f = last_fix_;
+	const double b_d2 = shadows_.size() > 1 ? shadows_[1].diag.d2 : 0.0;
+	const double b_w = shadows_.size() > 1 ? shadows_[1].diag.w : 1.0;
+	const double b_lag = shadows_.size() > 1 ? shadows_[1].diag.lag_ms : 0.0;
+	exp_csv_ << ',' << f.seq << ',' << (f.valid ? 1 : 0) << ',' << f.fix_type << ',' << f.sigma << ',' << f.n_vis << ','
+	         << f.err << ',' << f.mp << ',' << f.meas_ms << ',' << f.deliver_ms << ',' << main_diag_.d2 << ','
+	         << main_diag_.w << ',' << b_d2 << ',' << b_w << ',' << b_lag << ',' << (gps_enabled_ ? 1 : 0) << ',' << f.xy.x() << ','
+	         << f.xy.y() << '\n';
 }
 
 // ── The field boundary: local metres, or GPS coordinates converted like the bridge does ───────────

@@ -17,6 +17,8 @@
  *    along with RoboComp.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "specificworker.h"
+#include <format>
+#include <charconv>
 #include <webots/Field.hpp>   // tiltAngle read off the scene tree
 #include <set>
 
@@ -131,6 +133,7 @@ void SpecificWorker::initialize()
         if (track_scale_ <= 0.0) track_scale_ = 1.0;
         try { robot_def_ = configLoader.get<std::string>("Robot.Def"); } catch(...) {}
         try { gps_period_ms_ = configLoader.get<int>("GPS.Period"); } catch(...) {}
+        load_gnss_config();
         try { nominal_orient_var_ = configLoader.get<double>("IMU.NominalOrientVar"); } catch(...) {}
 
         // ── Synthetic sensor error — see the header for why the two channels differ ──
@@ -250,6 +253,7 @@ void SpecificWorker::initialize()
         {
             gps_->enable(std::max(gps_period_ms_, compute_period));
             init_gps_reference();
+            init_gnss_canopy();
         }
         if (zedRangeFinder) zedRangeFinder->enable(sensor_period);
         if (zed) zed->enable(sensor_period);
@@ -2208,8 +2212,167 @@ void SpecificWorker::update_gps_data()
         if (gps_origin_set_) { st.x -= gps_origin_east_; st.y -= gps_origin_north_; st.z -= gps_origin_alt_; }
     }
     st.valid = true;
+
+    // ── GNSS degradation / receiver status: once per receiver epoch (GPS.Period of simulation time) ──────────
+    if (gnss_enabled_ or not gnss_status_path_.empty())
+    {
+        const auto sim_ms = static_cast<std::int64_t>(std::llround(robot->getTime() * 1000.0));
+        if (gnss_last_epoch_ms_ >= 0 and sim_ms - gnss_last_epoch_ms_ < gps_period_ms_)
+        {
+            if (gnss_enabled_) return;            // between epochs: keep serving the last delivered fix
+        }
+        else
+        {
+            gnss_last_epoch_ms_ = sim_ms;
+            gnss::Fix f;
+            if (gnss_enabled_)
+            {
+                f = gnss_.epoch(st.x, st.y, st.z, sim_ms);
+                ++gnss_epochs_;
+                ++gnss_epochs_by_type_[std::clamp(f.fix_type, 0, 5)];
+                if (f.meas_ms > 0)
+                {
+                    st.valid = f.valid;
+                    st.x = f.x; st.y = f.y; st.z = f.z;
+                }
+                else
+                    st.valid = false;                 // nothing delivered yet (latency at start-up)
+                if (gnss_epochs_ % 600 == 0)
+                    std::printf("[GnssDegradation] %llu epochs: fixed %.0f%%, float %.0f%%, single %.0f%%, none %.0f%% "
+                                "(now %d sats, type %d, sigma %.3f m, err %.3f m, multipath %.3f m)\n",
+                                static_cast<unsigned long long>(gnss_epochs_),
+                                100.0 * gnss_epochs_by_type_[4] / gnss_epochs_, 100.0 * gnss_epochs_by_type_[5] / gnss_epochs_,
+                                100.0 * gnss_epochs_by_type_[1] / gnss_epochs_, 100.0 * gnss_epochs_by_type_[0] / gnss_epochs_,
+                                f.n_vis, f.fix_type, f.sigma, f.err, f.mp);
+            }
+            else
+            {
+                f.valid = true; f.x = st.x; f.y = st.y; f.z = st.z; f.sigma = gnss_clean_sigma_; f.fix_type = 4;
+                f.meas_ms = sim_ms;
+            }
+            write_gnss_status(f, sim_ms);
+        }
+    }
     const std::lock_guard<std::mutex> lock(gps_mutex_);
     gps_state_ = st;
+}
+
+void SpecificWorker::load_gnss_config()
+{
+    gnss::Params p;
+    const auto opt = [this](const char *key, auto &out)
+    {
+        try { out = configLoader.get<std::remove_reference_t<decltype(out)>>(key); } catch (...) {}
+    };
+    opt("GnssDegradation.Enabled", gnss_enabled_);
+    opt("GnssDegradation.StatusFile", gnss_status_path_);
+    opt("GnssDegradation.CleanSigmaM", gnss_clean_sigma_);
+    int seed = 1;
+    opt("GnssDegradation.Seed", seed);
+    p.seed = static_cast<std::uint32_t>(seed);
+    p.enabled = gnss_enabled_;
+    opt("GnssDegradation.Satellites", p.n_sats);
+    opt("GnssDegradation.MaskElevationDeg", p.mask_elev_deg);
+    opt("GnssDegradation.BlockChordM", p.block_chord_m);
+    opt("GnssDegradation.FixMinSats", p.fix_min_sats);
+    opt("GnssDegradation.FloatMinSats", p.float_min_sats);
+    opt("GnssDegradation.SingleMinSats", p.single_min_sats);
+    opt("GnssDegradation.ReacquireFixS", p.reacq_fix_s);
+    opt("GnssDegradation.ReacquireFloatS", p.reacq_float_s);
+    opt("GnssDegradation.SigmaFixM", p.sigma_fix_m);
+    opt("GnssDegradation.SigmaFloatM", p.sigma_float_m);
+    opt("GnssDegradation.SigmaSingleM", p.sigma_single_m);
+    opt("GnssDegradation.TauFixS", p.tau_fix_s);
+    opt("GnssDegradation.TauFloatS", p.tau_float_s);
+    opt("GnssDegradation.TauSingleS", p.tau_single_s);
+    opt("GnssDegradation.MultipathRateHz", p.mp_rate_hz);
+    opt("GnssDegradation.MultipathSigmaM", p.mp_sigma_m);
+    opt("GnssDegradation.MultipathTauS", p.mp_tau_s);
+    opt("GnssDegradation.LatencyMs", p.latency_ms);
+    opt("GnssDegradation.OutageRatePerMin", p.outage_rate_per_min);
+    opt("GnssDegradation.OutageMeanS", p.outage_mean_s);
+    for (const auto &[key, denied] : {std::pair{"GnssDegradation.DeniedZones", true}, std::pair{"GnssDegradation.DegradedZones", false}})
+    {
+        // etc/config_husky is read by ConfigLoader's TEXT parser, which has no arrays: the zones are a quoted
+        // string "x0 y0 x1 y1 [x0 y0 x1 y1 ...]" (local metres), parsed locale-free.
+        std::string text;
+        opt(key, text);
+        std::vector<double> v;
+        for (const char *p = text.data(), *end = text.data() + text.size(); p < end;)
+        {
+            while (p < end and (*p == ' ' or *p == ',')) ++p;
+            if (p >= end) break;
+            double d = 0.0;
+            const auto r = std::from_chars(p, end, d);
+            if (r.ec != std::errc()) break;
+            v.push_back(d);
+            p = r.ptr;
+        }
+        for (std::size_t i = 0; i + 3 < v.size(); i += 4)
+            p.zones.push_back({v[i], v[i + 1], v[i + 2], v[i + 3], denied});
+    }
+    gnss_.set_params(p);
+    if (gnss_enabled_)
+    {
+        std::string report;
+        const bool ok = gnss::Degrader::self_test(&report);
+        std::printf("[GnssDegradation] ON (seed %u, %d satellites, mask %.0f deg, latency %.0f ms, %zu zones) — the GPS "
+                    "fix is NO LONGER the plain Webots one\n%s\n", p.seed, p.n_sats, p.mask_elev_deg, p.latency_ms,
+                    p.zones.size(), report.c_str());
+        (void)ok;
+    }
+    if (not gnss_status_path_.empty())
+        std::printf("[GnssDegradation] receiver status -> %s\n", gnss_status_path_.c_str());
+}
+
+// The canopies of the loaded world, read from the scene tree (supervisor): every AppleTree / YoungPalm.
+void SpecificWorker::init_gnss_canopy()
+{
+    if (not gnss_enabled_) return;
+    std::vector<gnss::Canopy> canopy;
+    webots::Node *root = robot->getRoot();
+    webots::Field *children = root ? root->getField("children") : nullptr;
+    const auto f = [](webots::Node *n, const char *name, double def)
+    {
+        webots::Field *fl = n->getField(name);
+        return fl ? fl->getSFFloat() : def;
+    };
+    for (int i = 0; children and i < children->getCount(); ++i)
+    {
+        webots::Node *n = children->getMFNode(i);
+        if (n == nullptr) continue;
+        const std::string type = n->getTypeName();
+        const double *t = n->getField("translation") ? n->getField("translation")->getSFVec3f() : nullptr;
+        if (t == nullptr) continue;
+        if (type == "AppleTree")
+            canopy.push_back({t[0], t[1], t[2] + f(n, "trunkHeight", 0.6), t[2] + f(n, "height", 2.7), f(n, "canopyRadius", 0.55)});
+        else if (type == "YoungPalm")
+            canopy.push_back({t[0], t[1], t[2] + f(n, "trunkHeight", 0.7), t[2] + f(n, "trunkHeight", 0.7) + 0.3,
+                              0.8 * f(n, "frondLength", 0.6)});
+    }
+    // Into the GPS LOCAL frame (the one getPos() serves): world minus the local origin. With a WGS84 world the
+    // local frame IS the world frame (origin = gpsReference = world origin), so this is the identity there.
+    if (not gps_wgs84_ and gps_origin_set_)
+        for (auto &c : canopy) { c.x -= gps_origin_east_; c.y -= gps_origin_north_; }
+    gnss_.set_canopy(std::move(canopy));
+    std::printf("[GnssDegradation] sky model: %zu canopies from the world\n", gnss_.canopy_count());
+}
+
+void SpecificWorker::write_gnss_status(const gnss::Fix &f, std::int64_t deliver_ms)
+{
+    if (gnss_status_path_.empty()) return;
+    // One line, replaced atomically (write + rename): a reader never sees half a fix.
+    const std::string tmp = gnss_status_path_ + ".tmp";
+    if (FILE *fp = std::fopen(tmp.c_str(), "w"); fp != nullptr)
+    {
+        // std::format, not fprintf: the C locale may be es_ES here (decimal COMMA), std::format never is.
+        const std::string line = std::format("{} {} {} {} {:.4f} {:.4f} {:.4f} {:.4f} {} {} {} {} {:.4f} {:.4f}\n",
+                                             ++gnss_seq_, f.meas_ms, deliver_ms, f.valid ? 1 : 0, f.x, f.y, f.z, f.sigma,
+                                             f.fix_type, f.n_vis, f.n_partial, f.n_above, f.mp, f.err);
+        std::fputs(line.c_str(), fp);
+        std::fclose(fp);
+        std::rename(tmp.c_str(), gnss_status_path_.c_str());
+    }
 }
 
 bool SpecificWorker::GPS_getData(float &latitude, float &longitude, float &altitude)

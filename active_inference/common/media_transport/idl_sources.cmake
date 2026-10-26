@@ -5,9 +5,7 @@
 # subscriber-only consumer needs the whole set. (With a STATIC archive the linker still
 # only pulls the objects actually referenced.)
 #
-# include()d by common/CMakeLists.txt (the ai_common::media target) and by
-# common/media_transport/CMakeLists.txt (the standalone media_bench project), so adding a
-# 9th FrameKind is a one-line change that cannot leave the bench behind.
+# include()d by common/CMakeLists.txt (the ai_common::media target).
 
 set(AI_COMMON_IDL_DIR ${CMAKE_CURRENT_LIST_DIR}/generated/idl)
 

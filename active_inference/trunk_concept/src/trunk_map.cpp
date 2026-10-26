@@ -129,10 +129,10 @@ void TrunkMap::add_zed_frame(const std::vector<Eigen::Vector3f>& band_pts, const
         if (not looked or range > p_.zed_max_range or range < p_.zed_min_range)
             continue;
         const float off_axis = std::remainder(std::atan2(d.y(), d.x()) - cam_heading, 2.0f * static_cast<float>(M_PI));
-        if (std::abs(off_axis) > p_.zed_half_fov or occluded(cam, t, occluders))
+        if (std::abs(off_axis) > p_.zed_half_fov or (p_.visibility_model and occluded(cam, t, occluders)))
             continue;
         // How resolvable a trunk is falls with range (fewer pixels on a 7 cm stem).
-        const float p_vis = 1.0f - range / p_.zed_max_range;
+        const float p_vis = p_.visibility_model ? 1.0f - range / p_.zed_max_range : 1.0f;
         t.existence.note_viewpoint(cam.x(), cam.y(), t.c.x(), t.c.y(), p_.cluster_r);
         t.existence.integrate(p_vis, w * p_.llr_miss);
         ++t.zed_misses;
@@ -290,12 +290,13 @@ TrunkMap::Changes TrunkMap::update(std::int64_t now_ms)
     std::vector<Candidate> waiting;
     for (const auto& c : candidates_)
     {
-        if (not c.confirmed)
+        if (not c.confirmed and p_.lidar_confirm)
         {
             waiting.push_back(c);
             continue;
         }
-        const Eigen::Vector2f pos = c.lidar_pos;
+        // Ablation (lidar_confirm = false): the ZED cluster centre places it.
+        const Eigen::Vector2f pos = c.confirmed ? c.lidar_pos : c.c;
         if (std::ranges::any_of(trunks_, [&](const Trunk& t) { return (t.c - pos).norm() < p_.min_separation_m; }))
             continue;
         Trunk t;

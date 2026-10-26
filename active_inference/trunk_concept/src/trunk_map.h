@@ -65,6 +65,10 @@ struct TrunkParams
     float zed_min_range = 1.0f;      // ... and not closer: the band can fall below the image
     float zed_half_fov = 0.85f;      // rad, horizontal half field of view used for the visibility test
     float candidate_ttl_ms = 10000;  // candidate evidence not refreshed for this long is forgotten
+    // ── Ablation switches (experiments/README.md, E4). Defaults = the model above; false = the ablated model. ──
+    bool lidar_confirm = true;       // false: a ZED candidate is born as a trunk on its own (semantic-only birth)
+    bool visibility_model = true;    // false: every in-view look without the trunk is a full miss — no occlusion
+                                     // test and no range-dependent p_vis (absence charged as if always resolvable)
 };
 
 struct Occluder { Eigen::Vector2f c; float r; };   // a disc that blocks the view (foliage, person)

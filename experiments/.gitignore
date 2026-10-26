@@ -1,0 +1,4 @@
+# Raw data of each run (logs, recordings, config copies): large and regenerable. The reports
+# (resultados/*.md) and the figures (imagenes/) are kept.
+resultados/*/
+resultados/*.log

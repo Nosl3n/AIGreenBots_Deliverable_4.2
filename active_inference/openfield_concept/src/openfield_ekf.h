@@ -68,6 +68,11 @@ public:
     double correct_gps(const Eigen::Vector2d &gps_antenna_xy);
     double correct_gps(const Eigen::Vector2d &gps_antenna_xy, double sigma_m);
     double correct_yaw(double yaw);
+    // Student-t GPS likelihood (nu degrees of freedom), as ONE iteratively-reweighted step of its Gaussian scale
+    // mixture: the measurement precision is scaled by E[lambda | r] = (nu + 2) / (nu + d2), d2 the squared
+    // Mahalanobis innovation under sigma. A consistent fix (d2 ~ 2) is fused almost as a Gaussian one; a
+    // multipath jump (d2 >> nu) is down-weighted continuously, never gated. Returns d2; *weight gets the scale.
+    double correct_gps_student(const Eigen::Vector2d &gps_antenna_xy, double sigma_m, double nu, double *weight = nullptr);
 
     [[nodiscard]] const Eigen::Vector3d &state() const { return x_; }
     [[nodiscard]] const Eigen::Matrix3d &covariance() const { return P_; }

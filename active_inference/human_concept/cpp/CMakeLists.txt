@@ -18,15 +18,3 @@ add_library(human_core STATIC
     core/vfe_inference.cpp)
 target_include_directories(human_core PUBLIC core)
 target_link_libraries(human_core PUBLIC Eigen3::Eigen)
-
-add_executable(replay_main harness/replay_main.cpp)
-target_link_libraries(replay_main PRIVATE human_core)
-
-add_executable(sanity_checks test/sanity_checks.cpp)
-target_link_libraries(sanity_checks PRIVATE human_core)
-
-add_executable(parity_check test/parity_check.cpp)
-target_link_libraries(parity_check PRIVATE human_core)
-
-enable_testing()
-add_test(NAME sanity_checks COMMAND sanity_checks)

@@ -1,11 +1,13 @@
 # Sources set
 LIST(APPEND SOURCES
     ../src/specificworker.cpp
+    ../src/gnss_degradation.cpp
 )
 
 # Headers set
 LIST(APPEND HEADERS
     ../src/specificworker.h
+    ../src/gnss_degradation.h
     fixedsizedeque.h
 )
 

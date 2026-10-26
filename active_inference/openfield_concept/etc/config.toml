@@ -39,7 +39,7 @@ subtrees = ["field"]
 # origin = the world's gpsReference) OR GPS coordinates; local metres win if both are set.
 # The controller's planner marks everything outside it as occupied, and builds its grid over the
 # bounding box (and residual_concept its 5 cm occupancy grid), so keep it the size of the WORKING AREA.
-# husky_test.wbt: the 5 x 10 palm plot (x -5.6..5.6, y -7.35..7.35 with crowns) plus headlands to turn in
+# husky_apple.wbt: the 5 x 12 tree plot (x -5.7..5.7, y -7.6..7.6 with crowns) plus headlands to turn in
 # and the robot's start at (1.25, -10.5): 16 x 26 m. The whole 30 x 30 m arena would cost ~3x the cells.
 PolygonX = [-8.0, 8.0, 8.0, -8.0]
 PolygonY = [-13.0, -13.0, 13.0, 13.0]
@@ -58,6 +58,11 @@ GyroScale = 0.01
 GpsSigmaM = 0.05     # per-fix std; the proto's 0.02 is CORRELATED noise, so 0.02 here would be over-confident
 YawSigmaRad = 0.005  # InertialUnit yaw (proto noise 0.002), inflated for its correlation
 GpsLever = [0.0, -0.25]   # antenna in the body frame (x right, y forward): husky.json body<-gps
+# GPS fusion model (src/openfield_variants.h; experiments/README.md, E1). Defaults = the filter as it always was.
+GpsSigmaSource = "fixed"  # "fixed" = GpsSigmaM | "receiver" = the sigma the receiver reports (needs Gps.StatusFile)
+GpsLikelihood = "gauss"   # "gauss" | "student": Student-t (StudentNu dof) down-weights multipath jumps continuously
+StudentNu = 4.0
+LagCompensation = false   # true: a late fix is moved to NOW by the filter's own displacement since it was measured
 
 [Imu]
 Node = "imu"
@@ -67,6 +72,7 @@ StallTimeoutMs = 2000   # primary-input gate: no IMU frame for this long -> back
 
 [Gps]
 PollPeriodMs = 50
+StatusFile = ""           # the receiver's report (bridge GnssDegradation.StatusFile); "" = Ice GPS.getPos only
 
 [Viewer]
 # The localization window: estimated pose vs ground truth, GPS / odometry / IMU readouts, and switches to
@@ -75,6 +81,10 @@ Enabled = true
 
 [Diag]
 CsvPath = "tmp/openfield_pose.csv"
+ExperimentCsv = ""        # 10 Hz: every filter (+ full covariance), ground truth and receiver status; "" = off
+
+[Experiment]
+ShadowFilters = false     # true: also run E1's A/B/C/D filters on the same data (logged, never published)
 
 [Component.Debug]
 Verbose = false
@@ -84,3 +94,4 @@ Warn.Connections = "0"
 Trace.Network = "0"
 Trace.Protocol = "0"
 MessageSizeMax = "20004800"
+

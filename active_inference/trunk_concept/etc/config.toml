@@ -72,3 +72,8 @@ VegetationLabels = ["tree", "plant", "palm", "flower"] # any of them on a frame 
 UpdatePeriodMs = 500
 LidarEvery = 2
 MasksStallTimeoutMs = 5000
+
+[Ablation]
+# Switches for the E4 ablations (experiments/README.md). Both true = the normal model; leave them so.
+LidarConfirm = true       # false: a ZED (semantic) candidate becomes a trunk without the LiDAR confirming it
+VisibilityModel = true    # false: absence charged on every in-view look (no occlusion test, no range p_vis)

@@ -1,0 +1,106 @@
+# Experiment definitions (experiments/README.md). One table per experiment; each VARIANT is only a set of overrides
+#   [EX.variantes.<variant>.<component>]  "Section.Key" = value
+# applied to COPIES of that component's config for that run. The repo configs are never touched, so with no
+# overlay every switch keeps its default (= the normal behaviour of the stack). "{seed}" is replaced by the run seed.
+#
+# Keys per experiment:
+#   descripcion, mundo (husky_apple | exp_* in experiments/worlds), pila ("completa" | "localizacion"),
+#   excluir = [components left out], conductor ("ruta" = utils/run_route.py through the controller,
+#   "gt" = scripts/gt_driver.py on the simulator's ground truth, "ninguno"), ruta = "x,y x,y ...", duracion_s,
+#   calentamiento_s (after every agent is Operating), capturas_s (with --capturas).
+
+[comun.overrides]
+# Nothing global: every run starts from the configs the stack normally uses.
+
+# ── E1: localization with degraded GNSS (bridge degradation layer + EKF variants run side by side) ──────────────
+# The four configurations are run AT ONCE on the same data (openfield [Experiment] ShadowFilters): A = current EKF,
+# B = receiver sigma + Student-t + latency compensation, C = no GNSS after initialisation, D = no IMU yaw.
+# Every run drives the SAME path on the simulator's ground truth (scripts/gt_driver.py). The x = 3.75 corridor
+# section y in [-2, 6] is a declared no-GNSS zone.
+[E1]
+descripcion = "Localizacion con GNSS degradado: EKF actual / R del receptor + t-Student / sin GNSS / sin guinada IMU"
+mundo = "husky_apple"
+pila = "localizacion"
+conductor = "gt"
+ruta = "1.25,-10.5 1.25,8.5 3.75,8.5 3.75,-9.5 -1.25,-9.5 -1.25,8.5"
+velocidad = 0.6
+duracion_s = 240
+calentamiento_s = 10
+espera_operating_s = 90
+[E1.overrides.bridge]
+"GnssDegradation.StatusFile" = "/dev/shm/aigb_gnss_status"
+[E1.overrides.robot_concept]
+"Media.enable_zed" = false      # E1 runs no perception: do not relay camera / LiDAR through robot_concept
+"Media.enable_lidar" = false
+[E1.overrides.openfield_concept]
+"Gps.StatusFile" = "/dev/shm/aigb_gnss_status"
+"Experiment.ShadowFilters" = true
+"Diag.ExperimentCsv" = "tmp/exp_e1.csv"
+"Viewer.Enabled" = false
+[E1.variantes.degradado.bridge]
+"GnssDegradation.Enabled" = true
+"GnssDegradation.Seed" = "{seed}"
+"GnssDegradation.LatencyMs" = 200.0
+"GnssDegradation.OutageRatePerMin" = 0.5
+"GnssDegradation.DeniedZones" = "3.0 -2.0 4.5 6.0"
+[E1.variantes.limpio.bridge]
+"GnssDegradation.Enabled" = false
+
+# ── E2: people tracking. Variants: ZED + LiDAR (fused) and ZED only ──────────────────────────────────────────────
+[E2]
+descripcion = "Seguimiento de personas: cruces, oclusion por vegetacion, detras del robot. MOTA/MOTP/IDSW"
+mundo = "exp_personas"
+pila = "completa"
+conductor = "ruta"
+ruta = "-1.25,-10 -1.25,7.5 -1.25,-10 3.75,-10.3 -3.75,-10.3 -1.25,-10 -1.25,7.5 -1.25,-10"
+timeout_waypoint_s = 150
+duracion_s = 900
+calentamiento_s = 15
+[E2.variantes.fusion]
+[E2.variantes.solo_zed.human_concept]
+"HumanLidar.Enabled" = false
+
+# ── E3: trunk map, and the two ablations that show what each modality buys ─────────────────────────────────────
+# The base runs are the E4 missions (same configuration); this table only adds the ablations.
+[E3]
+descripcion = "Mapa de troncos: precision/exhaustividad/F1 frente a la verdad del mundo; ablaciones"
+mundo = "husky_apple"
+pila = "completa"
+conductor = "ruta"
+ruta = "3.75,-9.5 3.75,8 3.75,-9.5 -1.25,-9.5 -1.25,8 -1.25,-9.5 -3.75,-9.5 -3.75,8 -3.75,-9.5"
+timeout_waypoint_s = 150
+duracion_s = 1500
+calentamiento_s = 15
+[E3.variantes.base]
+[E3.variantes.sin_confirmacion_lidar.trunk_concept]
+"Ablation.LidarConfirm" = false        # a trunk is born from the ZED (semantic) candidate alone
+[E3.variantes.sin_pvis.trunk_concept]
+"Ablation.VisibilityModel" = false     # absence charged on EVERY in-view look: no occlusion test, no range p_vis
+
+# ── E4: integrated navigation (also the base of E3 and E5) ──────────────────────────────────────────────────────
+# Out and back along three corridors (the default route of utils/run_route.py), workers walking.
+[E4]
+descripcion = "Navegacion integrada: mision de ida y vuelta por los pasillos con trabajadores en movimiento"
+mundo = "husky_apple"
+pila = "completa"
+conductor = "ruta"
+ruta = "3.75,-9.5 3.75,8 3.75,-9.5 -1.25,-9.5 -1.25,8 -1.25,-9.5 -3.75,-9.5 -3.75,8 -3.75,-9.5"
+timeout_waypoint_s = 150
+duracion_s = 1500
+calentamiento_s = 15
+capturas_s = [40, 100, 170]
+[E4.variantes.base]
+
+# ── E5: computational performance; the second variant forces the semantic model to a lower rate ──────────────
+[E5]
+descripcion = "Rendimiento: frecuencias, latencias, CPU/GPU por agente; E3 repetido con el modelo semantico a menos fps"
+mundo = "husky_apple"
+pila = "completa"
+conductor = "ruta"
+ruta = "3.75,-9.5 3.75,8 3.75,-9.5 -1.25,-9.5 -1.25,8 -1.25,-9.5 -3.75,-9.5 -3.75,8 -3.75,-9.5"
+timeout_waypoint_s = 150
+duracion_s = 1500
+calentamiento_s = 15
+[E5.variantes.base]
+[E5.variantes.semantica_lenta.retina]
+"Semantic.decimation" = 4              # the ADE20K model on one frame in four

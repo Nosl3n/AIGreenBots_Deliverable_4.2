@@ -1,7 +1,6 @@
 #VRML_SIM R2025a utf8
-# Husky A300 APPLE ORCHARD: the husky_field layout (same GPS reference, tilled ground with raised beds, robot
-# start and workers with the same trajectories) with the palm rows replaced by 5 rows x 12 apple trees trained
-# as tall spindles (protos/AppleTree.proto): 1.3-3.2 m tall, so the canopy rises above the GPS antenna.
+# Husky A300 APPLE ORCHARD: tilled ground with raised beds, two walking workers and 5 rows x 12 apple trees
+# trained as tall spindles (protos/AppleTree.proto): 1.3-3.2 m tall, so the canopy rises above the GPS antenna.
 # Trees: webots-agri/tools/gen_apple_rows.py webots-agri/worlds/husky_apple.wbt --z 0.14
 # The robot starts in the SOUTH headland, on the corridor centre line x = 1.25, facing north (+Y).
 

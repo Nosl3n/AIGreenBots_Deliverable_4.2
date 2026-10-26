@@ -118,22 +118,19 @@ cd /path/to/robot_concept
 cp etc/config.toml etc/local_config.toml
 ```
 
-## DSR Graph — Sensor Frames (`shadow.json`)
+## DSR Graph — Sensor Frames (`husky.json`)
 
-The initial DSR graph is seeded from `shadow.json`.  Sensor nodes hang off the
-`body` node (id 250) via **RT** edges.
+The initial DSR graph is seeded from `husky.json` (root → husky → body). Sensor nodes hang off the `body` node
+via **RT** edges:
 
 | Edge (src → dst) | Translation (x, y, z) m | Rotation (rx, ry, rz) rad | Notes |
 |---|---|---|---|
-| body → lidar3D | (0, 0, 0) | (0, 0, 0) | **Identity** — lidar points are already delivered in the robot frame by the driver |
-| body → zed     | (0, −0.075, 0.945) | (0, 0, 0) | Camera optical centre |
-| body → imu     | (0, 0, 0) | (0, 0, 0) | Identity |
+| body → helios | (0, −0.25, 0.95) | (0, 0, 0) | 3D LiDAR on the rear mast |
+| body → zed    | (0, 0.42, 0.55) | (−0.2618, 0, 0) | Stereo camera, tilted 15° about x |
+| body → imu    | (0, 0, 0.2251) | (0, 0, 0) | |
+| body → gps    | (0, −0.25, 1.02) | (0, 0, 0) | GNSS antenna above the LiDAR |
 
-> **Why identity for lidar?**  The real Lidar3D driver pre-transforms each scan
-> into the robot (body) frame before publishing, so no additional geometric
-> offset is needed here.  If you switch to a driver that publishes in the
-> sensor's own frame, update the `rt_translation` / `rt_rotation_euler_xyz`
-> entries for node 210 in `shadow.json` accordingly.
+The `mind` node holds one child per running agent with its presence state (`agent_presence_state`).
 
 ## Run
 

@@ -113,6 +113,10 @@ void SpecificWorker::load_config()
 	optf("Trunk.ZedMinRangeM", m.zed_min_range);
 	optf("Trunk.LidarConfirmDzM", m.lidar_confirm_dz);
 	optf("Trunk.ZedHalfFovRad", m.zed_half_fov);
+	opt("Ablation.LidarConfirm", m.lidar_confirm);
+	opt("Ablation.VisibilityModel", m.visibility_model);
+	if (not m.lidar_confirm or not m.visibility_model)
+		std::println("[trunk_concept] ABLATION: LidarConfirm={} VisibilityModel={}", m.lidar_confirm, m.visibility_model);
 	std::vector<std::string> labels;
 	opt("Trunk.TrunkLabels", labels);
 	if (not labels.empty()) cfg_.trunk_labels = {labels.begin(), labels.end()};

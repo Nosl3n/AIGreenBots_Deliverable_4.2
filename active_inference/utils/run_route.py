@@ -9,7 +9,7 @@ Same mechanism as send_goal.py (a `goal` node of type `target` under the world f
 --timeout seconds have passed for that waypoint (logged as a timeout, and the route goes on). Needs the
 controller armed without a click: Controller.ArmOnStart = true (controller/etc/config_husky.toml).
 
-The default route is for webots-agri/worlds/husky_field.wbt and husky_apple.wbt (rows at x = -5 ... 5, 2.5 m
+The default route is for webots-agri/worlds/husky_apple.wbt (rows at x = -5 ... 5, 2.5 m
 apart, corridors at x = +-1.25, +-3.75), starting from the robot's spawn in the south headland; see DEFAULT_ROUTE
 for why it is shaped around the workers. Run it a few seconds after cognitive.py, once the agents are Operating.
 

@@ -16,9 +16,8 @@ python3 cognitive.py cognitive_husky.toml
 ```
 
 - Monitor web: <http://127.0.0.1:8080>
-- Webots debe tener abierto **`webots-agri/worlds/husky_field.wbt`** (o `husky_test.wbt`, suelo
-  plano). El lanzador arranca Webots si no está corriendo, pero abre **el último mundo usado**:
-  compruébalo.
+- Webots debe tener abierto **`webots-agri/worlds/husky_apple.wbt`** (`../../apple.bash` lo abre solo).
+  El lanzador arranca Webots si no está corriendo, pero abre **el último mundo usado**: compruébalo.
 - Se lanza **desde `utils/`**: los dos scripts importan el paquete `netmon/` de esta carpeta.
 - Sin argumento, cada lanzador usa su TOML del Husky.
 - Objetivo de navegación desde la terminal: `python3 send_goal.py X Y` (metros en el marco del

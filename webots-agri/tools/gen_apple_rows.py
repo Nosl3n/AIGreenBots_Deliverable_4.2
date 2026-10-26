@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Write rows of AppleTree (tall spindle) into a Webots world, between the APPLE_ROWS markers.
 
-Same layout as the palm field (gen_palm_rows.py), so the robot start, the workers' trajectories, the field
-polygon in openfield_concept and every other config stay valid: 5 rows at x = -5 ... 5 (the FieldTerrain
-beds), 2.5 m apart, running south->north (+Y), centred on the origin.
+Layout: 5 rows at x = -5 ... 5 (the FieldTerrain beds), 2.5 m apart, running south->north (+Y), centred on the
+origin — the robot start, the workers' trajectories and the field polygon in openfield_concept assume it.
 
 An orchard is not uniform, so each tree gets its own size, drawn per tree from three classes:
   * mature  (most trees): 2.3-3.2 m tall, canopy radius 0.48-0.65 m, full leaf and fruit load;

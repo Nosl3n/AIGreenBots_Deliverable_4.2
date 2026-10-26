@@ -106,6 +106,22 @@ double OpenFieldEkf::correct_gps(const Eigen::Vector2d &z, double sigma_m)
     return r.dot(S.ldlt().solve(r));
 }
 
+double OpenFieldEkf::correct_gps_student(const Eigen::Vector2d &z, double sigma_m, double nu, double *weight)
+{
+    if (not initialized_ or not z.allFinite() or not (sigma_m > 0.0)) return 0.0;
+    Eigen::Matrix<double, 2, 3> H = Eigen::Matrix<double, 2, 3>::Zero();
+    H(0, 0) = 1.0;
+    H(1, 1) = 1.0;
+    H.col(2) = d_rotate(x_(2), p_.gps_lever);
+    const Eigen::Matrix2d S = H * P_ * H.transpose() + sigma_m * sigma_m * Eigen::Matrix2d::Identity();
+    const Eigen::Vector2d r = z - predicted_antenna();
+    const double d2 = r.dot(S.ldlt().solve(r));
+    const double w = (nu + 2.0) / (nu + d2);
+    if (weight) *weight = w;
+    correct_gps(z, sigma_m / std::sqrt(w));
+    return d2;
+}
+
 double OpenFieldEkf::correct_yaw(double yaw)
 {
     if (not initialized_ or not std::isfinite(yaw)) return 0.0;

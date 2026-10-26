@@ -6,7 +6,7 @@
 # stake beside the trunk, leaves along the outer part of every branch and fruit hanging under them.
 #
 # Webots' own trees (Tree / SimpleTree "crab apple tree") are two crossed textured planes: fine for a camera,
-# but the LiDAR sees two flat sheets instead of a crown. This one is procedural, like YoungPalm: wood, leaves
+# but the LiDAR sees two flat sheets instead of a crown. This one is procedural: wood, leaves
 # and fruit are a few IndexedFaceSets, and `seed` varies the branch, leaf and fruit layout per instance
 # deterministically, so an orchard looks natural but re-loads identical. Per-tree SIZE (height, canopy
 # radius, leaf and fruit load) is set by webots-agri/tools/gen_apple_rows.py.

@@ -18,5 +18,10 @@ active_inference/openfield_concept/tmp/
 # Webots per-user project state (window layout).
 webots-agri/worlds/.*.wbproj
 
-# Exported archives of generated diagrams.
-.archify/*.zip
+# Local notes and tool state: they live outside this public repo.
+.archify/
+CLAUDE.md
+.claude/
+
+# Runtime logs written next to each component.
+*.log

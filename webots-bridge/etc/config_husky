@@ -201,3 +201,32 @@ Ice.MessageSizeMax = "20004800"
 # mount (inverted on Shadow) lives in the RT edge, not here.
 LidarChannels.helios.ElevMinDeg = -55.0
 LidarChannels.helios.ElevMaxDeg = 15.0
+
+# ---------------------------------------------------------------------------------------------
+# GNSS DEGRADATION — SIMULATION ONLY (src/gnss_degradation.h; experiments/README.md, E1).
+# The Webots GPS is Gaussian noise around the truth: under an orchard canopy a real RTK receiver loses
+# satellites, drops from RTK fixed to float or single, jumps with multipath and delivers late. With
+# Enabled = true the fix served on GPS.getPos() is degraded that way (sky rays through the canopies of the
+# loaded world, fixed/float/single with re-acquisition time, multipath, declared zones, outages, latency).
+# Enabled = false (default) = exactly the plain Webots fix, as before.
+# StatusFile (with Enabled or not): one line per fix with what the receiver reports beside it (sigma, fix
+# type, satellites, measurement time), for openfield_concept's [Gps] StatusFile. "" = not written.
+GnssDegradation.Enabled = false
+GnssDegradation.StatusFile = ""
+GnssDegradation.Seed = 1                  # constellation + noise draws; same seed = same run
+GnssDegradation.Satellites = 16
+GnssDegradation.MaskElevationDeg = 10.0
+GnssDegradation.BlockChordM = 0.40        # foliage a ray crosses that blocks the satellite
+GnssDegradation.FixMinSats = 12           # visible satellites for RTK fixed / float / single
+GnssDegradation.FloatMinSats = 8
+GnssDegradation.SingleMinSats = 5
+GnssDegradation.ReacquireFixS = 8.0       # good geometry this long before RTK fixed comes back
+GnssDegradation.SigmaFixM = 0.015         # per-axis 1 sigma per state (Gauss-Markov, tau per state)
+GnssDegradation.SigmaFloatM = 0.25
+GnssDegradation.SigmaSingleM = 1.2
+GnssDegradation.MultipathRateHz = 0.15    # jump onset rate with the whole sky blocked
+GnssDegradation.MultipathSigmaM = 0.8
+GnssDegradation.LatencyMs = 0.0
+GnssDegradation.OutageRatePerMin = 0.0
+GnssDegradation.DeniedZones = ""          # "x0 y0 x1 y1 ..." (rectangles, local metres): no fix inside
+GnssDegradation.DegradedZones = ""        # same format: half the sky lost inside

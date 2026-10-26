@@ -127,21 +127,18 @@ endfunction()
 # =====================================================================================
 # ai_common::core — header-only. Zero external deps beyond Eigen.
 #
-#   ai_belief/{dof_spec,lidar_ray_factor,recursive_laplace}.h   existence_belief/
-#   appearance_belief/  occlusion/  instance_tracker/  belief_stabilizer/  support_parent/
-#   motion_filter/  motion_corruption/  stream_gate/  phantom_log/  depth_projection/
-#   object_anchor/  affordance_protocol/  graph3d/graph3d_scene.h
+#   ai_belief/recursive_laplace.h   existence_belief/  instance_tracker/  belief_stabilizer/
+#   motion_corruption/  stream_gate/  phantom_log/  depth_projection/
+#   affordance_protocol/  graph3d/graph3d_scene.h
 #   agent_state_publisher/{agent_status.h,agent_state_publisher.h}
-#   kinematics/self_projection_capsules.h  self_tuner/self_tuner.h
+#   kinematics/self_projection_capsules.h
 #   detectability/detectability.h            P(detect | fill, visible_frac) — the detector's INVERSE model
 #   nbv/viewpoint_score.h                    detection-WEIGHTED next-best-view (pure Eigen; testable headless)
 #   nbv/graph_obstacles.h                    its DSR-side adapter (reads other objects' footprints)
-#   view_field/{view_field,phantom_feed}.h   learnt p_FA(cell x bearing x label); persisted CSV
 #   place_memory/place_map.h                 panoramic appearance keyframes -> a pose MIXTURE
-#                                            (Eigen + stdlib ONLY — no DSR, so the offline tools and
-#                                             run_tests.sh build it in seconds)
+#                                            (Eigen + stdlib ONLY — no DSR)
 #
-# Some of these include <dsr/...> (depth_projection, object_anchor_contract, affordance_protocol,
+# Some of these include <dsr/...> (depth_projection, affordance_protocol,
 # nbv/graph_obstacles), so the DSR libs ride along on the INTERFACE. Qt6::Core rides along too: dsr_api.h pulls in
 # dsr_agent_info_api.h, which includes <QDebug> — every DSR consumer needs Qt Core's headers.
 # =====================================================================================
@@ -234,9 +231,9 @@ add_library(ai_common::status_overlay ALIAS ai_common_status_overlay)
 # =====================================================================================
 # ai_common::ui_headers — INTERFACE ONLY, and it must stay that way.
 #
-#   dashboard/{belief_inspector,custom_widget,evidence_monitor}.h
+#   dashboard/custom_widget.h
 #   viewers/gl_{graph3d,grid_field,imu,mesh,point_cloud,skeleton}_viewer.h
-#   viewers/{polygon_viewer,semantic_map_viewer,grid_surface_builder}.h
+#   viewers/{polygon_viewer,semantic_map_viewer}.h
 #
 # These are header-only Q_OBJECT classes. They are mocced TODAY by the *consumer's* AUTOMOC,
 # through its scan of the headers #included by the component's own .cpp files. That keeps
