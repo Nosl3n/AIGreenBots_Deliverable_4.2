@@ -1,4 +1,4 @@
-experiments/images/AGB_Logo.png
+![Logo](experiments/images/AGB_Logo.png)
 
 # AiGB_UEx_Navigation — autonomous navigation of a Husky A300 in an apple orchard
 
