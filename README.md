@@ -1,3 +1,5 @@
+(experiments/images/AGB_Logo.png)
+
 # AiGB_UEx_Navigation — autonomous navigation of a Husky A300 in an apple orchard
 
 Cognitive stack for a **Clearpath Husky A300** agricultural robot simulated in **Webots**. The robot localizes
