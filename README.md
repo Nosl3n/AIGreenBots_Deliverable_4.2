@@ -1,6 +1,8 @@
 ![Logo](experiments/images/AGB_Logo.png)
 
-# AiGB_UEx_Navigation — autonomous navigation of a Husky A300 in an apple orchard
+# AIGreenBots Project -- Deliverable 4.2
+
+# Individual Research Project #09: Sensor Fusion and Robotic Perception for Agricultural Robots
 
 Cognitive stack for a **Clearpath Husky A300** agricultural robot simulated in **Webots**. The robot localizes
 itself with GNSS, IMU and wheel odometry; builds a semantic map of the orchard (trunks, foliage, unmodelled
@@ -124,7 +126,7 @@ Components: `webots-bridge`;
   `python3 active_inference/utils/send_goal.py X Y` (metres in the field frame: x east, y north).
 - **Xbox gamepad:** forward with the left stick, turn with the right one.
 - **Web monitor** of the agents' state: <http://127.0.0.1:8080>.
-- Layer-by-layer start-up and launcher details: [`active_inference/utils/README.md`](active_inference/utils/README.md).
+- Layer-by-layer start-up and launPerception and Sensor Fusioncher details: [`active_inference/utils/README.md`](active_inference/utils/README.md).
 
 ## 4. The robot and the orchard
 
